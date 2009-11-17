@@ -8,7 +8,7 @@ from time import time
 
 
 PREFERRED_SITES = [""]
-DENIED_SITES = ["T1","US","HU","T2_CH_CSCS"]
+DENIED_SITES = ["HU"]
 PROTOCOL = "srmv2"
 
 SRM_OPTIONS = "-streams_num=1 "
