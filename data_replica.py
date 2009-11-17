@@ -19,7 +19,7 @@ SRM_OPTIONS += "-request_lifetime=6000 "
 
 usage = """usage: %prog [options] list_file_to_be_transferred [dest_dir]
 
-    This program will replicate 
+    This program will replicate a list of files from a site to another one using SRM
 
     list_file_to_be_transferred is a list of LFN you want to replicate to a site
 
