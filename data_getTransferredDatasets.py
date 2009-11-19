@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id$
+# $Id: data_getTransferredDatasets.py,v 1.1 2009/11/19 16:33:36 leo Exp $
 #################################################################
 
 
@@ -15,7 +15,7 @@ from time import time
 usage = """This script queries the PhEDEx dataservice and finds all the datasets
 completely transferred at a site, given a temporal interval. 
 
-USAGE: "+argv[0]+" site start_time [end_time] (format:YYYY-MM-DD)"""
+USAGE: """+argv[0]+""" site start_time [end_time] (format:YYYY-MM-DD)"""
 
 if len(argv)<3:
     print usage
