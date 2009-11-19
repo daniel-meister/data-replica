@@ -8,17 +8,14 @@ from optparse import OptionParser
 usage = """This script is just a simple wrapper for some useful BDII queries,
 not included in lcginfo and too complex to be remembered (thx, GLUE!).
 
-usage: %prog info-type [--select=value]
+usage: %prog info-type 
 
 info-type can be:
 
 [SE]
-    - se-technology: it outputs a list of SE and their technologies. If --select=<technology> is given
-    only SEs with that technology are listed. E.g.:
+    - se-technology: it outputs a list of SE and their technologies. 
 
-    %prog se-technology
 
-    %prog se-technology --select=bestman
          
 
 """
@@ -47,19 +44,22 @@ else:
 
 pipe = popen(command)
 output = ""
+site = {}
+
 for l in pipe.readlines():
     l = l.strip('\n')
     if INFO_TYPE == "se-technology":
-        if options.select!="":
-            print options.select
+        test = l.find("GlueSEUniqueID=")
+        if test!=-1:
+            output_temp = l[test+len("GlueSEUniqueID="):].replace('Mds-Vo-name=','').split(',')
+            siteName = output_temp[1]+" ("+output_temp[0]+")"
+            site[siteName]=''
         else:
-            test = l.find("GlueSEUniqueID=")
-            if test!=-1:
-                output_temp = l[test+len("GlueSEUniqueID="):].replace('Mds-Vo-name=','').split(',')
-                output += output_temp[1]+" ("+output_temp[0]+")"
-            else:
-                output += l.replace('GlueSEImplementationName:',' ')
-                output +='\n'
-                
+            tech = l.replace('GlueSEImplementationName:',' ').lower()
+            site[siteName]= tech
+            
 
-print output
+for s in site.keys():
+    if site[s]!="":
+        print s, site[s]
+
