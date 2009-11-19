@@ -1,4 +1,12 @@
 #!/bin/env python
+#################################################################
+# data_replica.py
+#
+# Author: Leonardo Sala <leonardo.sala@cern.ch>
+#
+# $Id$
+#################################################################
+
 
 import os
 from os import popen

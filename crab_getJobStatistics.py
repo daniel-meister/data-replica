@@ -1,4 +1,11 @@
 #!/usr/bin/python
+#################################################################
+# crab_getJobStatistics.py
+#
+# Author: Leonardo Sala <leonardo.sala@cern.ch>
+#
+# $Id$
+#################################################################
 
 
 import xml.dom.minidom

@@ -1,4 +1,11 @@
 #!/bin/env python
+#################################################################
+# data_divideCases.py
+#
+# Author: Leonardo Sala <leonardo.sala@cern.ch>
+#
+# $Id$
+#################################################################
 
 from os import popen
 from sys import argv, exit

@@ -1,4 +1,12 @@
 #!/usr/bin/python
+#################################################################
+# grid_queryBDII.py
+#
+# Author: Leonardo Sala <leonardo.sala@cern.ch>
+#
+# $Id$
+#################################################################
+
 
 from sys import argv, exit
 from os import popen
