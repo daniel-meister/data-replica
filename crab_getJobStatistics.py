@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id$
+# $Id: crab_getJobStatistics.py,v 1.2 2009/11/19 16:38:20 leo Exp $
 #################################################################
 
 
@@ -13,6 +13,7 @@ from xml.dom.minidom import Node
 from sys import argv,exit
 import os
 from math import sqrt
+import re
 
 isRoot = True
 
@@ -23,13 +24,17 @@ except:
     isRoot = False
 
 if len(argv)<2:
-    print "USAGE: "+argv[0]+" dir_of_crab_dirs <outfile.root>"
+    print "USAGE: "+argv[0]+" dir_of_crab_dirs <outfile.root> <myFilter>"
     exit(1)
 
-if len(argv)==3:
+if len(argv)>2:
     OUTFILE = argv[2]
 else:
     OUTFILE = "results.root"
+
+myFilter=""
+if len(argv)==4:
+    myFilter = argv[3]
 
 ####### USE MAX RANGE FOR HISTOS
 
@@ -39,14 +44,7 @@ LABELS = ['ExeTime',
           'CrabCpuPercentage',
           'CrabWrapperTime',
           'CrabStageoutTime']
-#          'tstoragefile-read-max-msecs',
-#          'tstoragefile-read-actual-total-msecs',
-#          'tstoragefile-read-total-megabytes',
-#          'tstoragefile-write-max-msecs',
-#          'tstoragefile-write-actual-total-msecs',
-#          'tstoragefile-write-total-megabytes']
 
-#LABELS = []
 
 def parseXML(myXML, mapping):
     XML_file = open(myXML.strip("\n"))
@@ -60,15 +58,22 @@ def parseXML(myXML, mapping):
 
 
 def parseStdOut(log_file,crab_stdout):
-    out =  os.popen("grep ExeExitCode "+log_file)
+    out =  os.popen("grep JobExitCode "+log_file)
     crab_stdout["Success"] = False
+    crab_stdout["Error"] = {}
+ 
     for x in out:
         metric= x.strip("\n").split("=")[1].strip("%")
         metric = float(metric)
         if metric == 0:
             crab_stdout["Success"] = True
+            break
+        else:
+            if not crab_stdout["Error"].has_key(metric):
+                crab_stdout["Error"][metric]=0
+            crab_stdout["Error"][metric]+=1
             
-    if not crab_stdout["Success"]:
+    if not  crab_stdout["Success"]:
         return crab_stdout
 
     for label in LABELS:
@@ -119,6 +124,8 @@ def printStat(DIR_SUMMARY):
             if label != "ExeExitCode" and label !='Success' and label!="Failures":
                 if DIR_SUMMARY[dir].has_key(label):
                     print label+": %.2f +- %.2f" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
+
+        
                 
 #    TOTAL = computeTotalStat(DIR_SUMMARY)
 #    print "\n----- TOTAL "
@@ -151,22 +158,79 @@ def printWikiStat(DIR_SUMMARY):
         else:
             perc = 100*DIR_SUMMARY[dir]["Success"]/total
             line += "%.1f%% (%.0f / %.0f) |" %(perc,DIR_SUMMARY[dir]["Success"], total)
-
     print line
 
-    line =""
+    ### [dir][label] not useful here...
+    pError = {}
+    line=""
+    for dir in tasks:
+        for err in DIR_SUMMARY[dir]["Error"].keys():
+            if not pError.has_key(err):
+                pError[err] = {}
+            pError[err][dir] = DIR_SUMMARY[dir]["Error"][err]
+
+
+    for err in pError.keys():
+        line = "| *Error "+err+"* |"
+        for dir in tasks:
+            if not pError[err].has_key(dir): line += " // | "
+            else:
+                line += "%s  |" %( pError[err][dir])
+        print line
+
+    orderedLabels = {}
     for label in LABELS:
-#        if not DIR_SUMMARY[dir].has_key(label):
-#            continue
-        if label != "ExeExitCode" and label!="Success" and label!="Failures":
-            line = ""
-            line += "| *"+label+"*|"
-            for dir in tasks:
-                if DIR_SUMMARY[dir].has_key(label):
-                    line += " %.2f +- %.2f |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
-                else:
-                    line += " // |"
+        lwork = label.split("-")
+        if len(lwork)>2:
+            tech = lwork[0]
+            meas = lwork[1]
+            quant = lwork[-1]
+            char = ""
+            for x in lwork[2:-1]:
+                char = x+"-"
+            char.strip("-")
+            
+            if not orderedLabels.has_key(meas):
+                orderedLabels[meas] = {}
+            if not orderedLabels[meas].has_key(quant):
+                orderedLabels[meas][quant] = {}
+            if not orderedLabels[meas][quant].has_key(char):
+                orderedLabels[meas][quant][char] = []
+
+            orderedLabels[meas][quant][char].append(label)
+            
+        else:
+            if label != "ExeExitCode" and label!="Success" and label!="Failures":
+                line = ""
+                line += "| *"+label+"*|"
+                for dir in tasks:
+                    if DIR_SUMMARY[dir].has_key(label):
+                        line += " %.2f +- %.2f |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
+                    else:
+                        line += " // |"
             print line
+
+    line =""
+
+    orderedLabels2 = orderedLabels.keys()
+    orderedLabels2.sort()
+
+    for meas in orderedLabels2:
+        if not meas in ["read","readv","seek","open"]: continue
+        print "| *"+meas.upper()+"*||||||"
+        for quant in  orderedLabels[meas].keys():
+            for char in  orderedLabels[meas][quant].keys():
+                for label in  orderedLabels[meas][quant][char]:
+                    if label != "ExeExitCode" and label!="Success" and label!="Failures":
+                        line = ""
+                        line += "| *"+label+"*|"
+                        for dir in tasks:
+                            if DIR_SUMMARY[dir].has_key(label):
+                                line += " %.2f +- %.2f |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
+                            else:
+                                line += " // |"
+                        print line
+
 
     
 
@@ -193,10 +257,11 @@ def computeTotalStat(DIR_SUMMARY):
     for dir in DIR_SUMMARY.keys():
         TOTAL_STAT["Success"] += DIR_SUMMARY[dir]["Success"]
         TOTAL_STAT["Failures"] += DIR_SUMMARY[dir]["Failures"]
-
-
         
     return TOTAL_STAT
+
+
+
 
 
 def divideCanvas(canvas, numberOfHisto):
@@ -204,8 +269,6 @@ def divideCanvas(canvas, numberOfHisto):
         canvas.Divide(numberOfHisto)
     elif numberOfHisto == 4:
         canvas.Divide(2,2)
-#    elif numberOfHisto > 4 and numberOfHisto < 7:
-#        canvas.Divide(3, 3)
     elif numberOfHisto == 8:
         canvas.Divide(4,2)
     elif  numberOfHisto >4 and numberOfHisto < 10:
@@ -226,22 +289,18 @@ SINGLE_DIR_DATA = {}
 
 DIRS = os.listdir(argv[1])
 
-
-#for x in LABELS:
-#    SINGLE_DIR_DATA[x] = {}
-#    for dir in DIRS:
-#        SINGLE_DIR_DATA[x][dir] = []
-
-
 binEdges = {'low':{},'high':{}}
 for dir in DIRS:
+    filter = re.compile(myFilter)
+    if not filter.search(dir): continue
 
-    SUMMARY = {"Success":0, "Failures":0}
+    SUMMARY = {"Success":0, "Failures":0, "Error":{}}
     MEAN_COMP = {}
 
     if os.path.isdir(argv[1]+"/"+dir) == True:
 
         print "Analyzing "+dir
+        totalFiles = 0
         #Parsing Files
         logdir = argv[1]+"/"+dir+"/res/"
         LOGS = os.popen("ls "+logdir+"*.stdout")
@@ -253,23 +312,27 @@ for dir in DIRS:
                 continue
             else:
                 parseStdOut( logdir+"CMSSW_"+str(lognum)+".stdout",job_output)
+                totalFiles += 1
 
-            if not job_output["Success"]:
-                continue
-
-            xml_file = logdir+"crab_fjr_"+str(lognum)+".xml"
-            if not os.path.isfile( xml_file ):
-                print "[ERROR] "+xml_file+" NOT FOUND!"
-                #continue
-            else:
-                #print lognum
-                if float(os.stat( xml_file ).st_size)<1:
-                    print "[ERROR] "+xml_file+" EMPTY!"
-                    #continue
+            if job_output["Success"]:
+                xml_file = logdir+"crab_fjr_"+str(lognum)+".xml"
+                if not os.path.isfile( xml_file ):
+                    print "[ERROR] "+xml_file+" NOT FOUND!"
                 else:
-                    parseXML( xml_file,job_output)
+                    if float(os.stat( xml_file ).st_size)<1:
+                        print "[ERROR] "+xml_file+" EMPTY!"
+                    else:
+                        parseXML( xml_file,job_output)
 
             #Computing statistics
+            if not job_output["Success"]:
+                for err in job_output["Error"].keys():
+                    err = str(err)
+                    err = err[:err.find(".")]
+                    if not SUMMARY["Error"].has_key(err):
+                        SUMMARY["Error"][err] = 0
+                    SUMMARY["Error"][err] += 1
+
             for label in job_output.keys():
                 try:
                     float( job_output[label])
@@ -308,9 +371,13 @@ for dir in DIRS:
                 SUMMARY["Success"] +=1
             else:
                 SUMMARY["Failures"] +=1
+                
+
+        for err in SUMMARY["Error"].keys():
+            SUMMARY["Error"][err] = float(SUMMARY["Error"][err])/float(totalFiles)
 
         for label in LABELS:
-            if label== "Success" or label == "Failures": continue
+            if label== "Success" or label == "Failures" or label == "Error": continue
             if not MEAN_COMP.has_key(label): continue
             SUMMARY[label] = computeStat(MEAN_COMP[label])
         else:
@@ -318,7 +385,7 @@ for dir in DIRS:
         DIR_SUMMARY[dir] = SUMMARY
 
 LABELS.sort()
-printStat(DIR_SUMMARY)
+#printStat(DIR_SUMMARY)
 printWikiStat(DIR_SUMMARY)
 
 
@@ -331,67 +398,39 @@ if isRoot:
     DIR_SUMMARY_keys.sort()
 
     DIRS = os.listdir(argv[1])
-    myCanvas = {}
-    myH = {}
-    for label in LABELS:
-        if label== "Success" or label == "Failures": continue
-#        myCanvas[label] = ROOT.TCanvas(label,label,200,10,700,500)
-        myH[label] = ROOT.TH1F(label,label,len(DIR_SUMMARY_keys ),0,1)
-        bin=1
-        for dir in DIR_SUMMARY_keys:
-            if not DIR_SUMMARY[dir].has_key(label): continue
-            myH[label].Fill(dir,DIR_SUMMARY[dir][label][0])
-            myH[label].SetBinError(bin,DIR_SUMMARY[dir][label][1])
-            bin+=1
+#    myCanvas = {}
+#    myH = {}
+#    for label in LABELS:
+#        if label== "Success" or label == "Failures": continue
+#        myH[label] = ROOT.TH1F(label,label,len(DIR_SUMMARY_keys ),0,1)
+#        bin=1
+#        for dir in DIR_SUMMARY_keys:
+#            if not DIR_SUMMARY[dir].has_key(label): continue
+#            myH[label].Fill(dir,DIR_SUMMARY[dir][label][0])
+#            myH[label].SetBinError(bin,DIR_SUMMARY[dir][label][1])
+#            bin+=1
             
-#        myH[label].Draw()
-        #myCanvas[label].Update()
-#        myCanvas[label].Write()
-        #myCanvas[label].SaveAs(label+".png")
-        
-
-    single_Canvas = {}
+#    single_Canvas = {}
     single_H = {}
     for label in LABELS:
-#        single_Canvas[label] = ROOT.TCanvas("single_"+label,"single_"+label,200,10,700,500)
-
-#        numberOfHisto = len(DIR_SUMMARY_keys)
-#        print numberOfHisto
-#        divideCanvas(single_Canvas[label], numberOfHisto)
-
-#        single_Canvas[label].Divide(4,2)
-
         single_H[label] = {}
-#        histoN = 1
         for dir in DIR_SUMMARY_keys:
-#            print label, dir, binEdges['low'][label], binEdges['high'][label]
             if not SINGLE_DIR_DATA[label].has_key(dir): continue
             single_H[label][dir] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+dir,dir,200,0.9*binEdges['low'][label],1.1*binEdges['high'][label])
-
-            #single_H[label][dir].SetBit(ROOT.TH1F.kCanRebin)
             for entry in SINGLE_DIR_DATA[label][dir]:
                 single_H[label][dir].Fill(entry)
 
-
-#    for label in LABELS:
-#        if label== "Success" or label == "Failures": continue
-
-#        histoN=1
-#        for dir in DIR_SUMMARY_keys:
-#            single_Canvas[label].cd(histoN)
-#            single_H[label][dir].Draw()
-#            histoN += 1
-#            single_Canvas[label].Update()
-
-#        single_Canvas[label].Draw()
-#        single_Canvas[label].Write()
-
-        #single_Canvas[label].SaveAs("single_"+label+".png")
-
-#    os.popen("sleep 100000")
+    ### ERRORS HAVE A DIFFERENT TREATMENT
+    single_H["Error"] = {}
+    for dir in DIR_SUMMARY.keys():
+        label="Error"
+        single_H[label][dir] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+dir,dir,200,0,1)
+        for err in DIR_SUMMARY[dir][label].keys():
+            print err, DIR_SUMMARY[dir][label][err]
+            single_H[label][dir].Fill(err, DIR_SUMMARY[dir][label][err] )
 
     outFile.Write()
     outFile.Close()
-#    os.popen("sleep 100000")
+
 
 
