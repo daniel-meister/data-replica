@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id$
+# $Id: crab_cfrSamples.py,v 1.2 2009/11/19 16:38:20 leo Exp $
 #################################################################
 
 from sys import argv,exit
@@ -17,30 +17,21 @@ except:
     print "ROOT cannot be loaded"
     exit(1)
 
-LABEL = "T3Test_JRA1_"
+LABEL = "PAT1_"
+#SAMPLE = "RH-AUTO_CH-AUTO_CACHE-20_15k" #"15k"
+SAMPLE = "15k"
+
 
 samples = [
-    "JRA_100j_15000evts_InclMu5_pt50_AOD_CMSSW332",
-    "JRA_100j_15000evts_InclMu5_pt50_AOD_CMSSW332Patched",
-#    "JRA_100j_15000evts_InclMu5_pt50_AOD_noTAdaptor_CACHE-20_CMSSW332",
-#    "JRA_100j_15000evts_InclMu5_pt50_AOD_noTAdaptor_CACHE-50_CMSSW332",
-    "JRA_100j_15000evts_InclMu5_pt50_AOD_RH-APP_CH-AUTO_CACHE-20_CMSSW332", 
-    "JRA_100j_15000evts_InclMu5_pt50_AOD_RH-APP_CH-AUTO_CACHE-20_CMSSW332Patched",
-    "JRA_100j_15000evts_InclMu5_pt50_AOD_RH-AUTO_CH-AUTO_CACHE-20_CMSSW332",
-    "JRA_100j_15000evts_InclMu5_pt50_AOD_RH-AUTO_CH-AUTO_CACHE-20_CMSSW332Patched",
-#    "PAT_100j_15000evts_InclMu5_pt50_AOD_CMSSW332",
-#    "PAT_100j_15000evts_InclMu5_pt50_AOD_CMSSW332Patched",
-#    "PAT_100j_15000evts_InclMu5_pt50_AOD_RH-AUTO_CH-AUTO_CACHE-20_CMSSW332",
-#    "PAT_100j_15000evts_InclMu5_pt50_AOD_RH-AUTO_CH-AUTO_CACHE-20_CMSSW332Patched"
-
-
+"DESY-"+LABEL+SAMPLE,
+"UCSD-"+LABEL+SAMPLE,
+"Rome-"+LABEL+SAMPLE
     ]
 
 cuts = [
-#    "PAT",
-    "JRA",
+    LABEL,
     "_100j_",
-    "_InclMu5_pt50_"
+    "_QCDPt80_"
     ]
 
 filter = [
@@ -48,38 +39,10 @@ filter = [
 #    ".*read.*(total-msecs).*",
 #    ".*write.*(total-msecs|total-megabytes).*",
     "Crab.*",
-    "ExeTime"
+    "ExeTime",
+    "Error"
 ]
 
-#quantities = [
-#    "CrabCpuPercentage",
-#    "CrabStageoutTime",
-#    "CrabSysCpuTime",
-#    "CrabUserCpuTime",
-#    "CrabWrapperTime",
-#    "ExeTime",
-#    "dcap-position-num-successful-operations",
-#    "dcap-position-total-msecs",
-#    "dcap-read-num-successful-operations",
- #   "dcap-read-total-megabytes",
-#    "dcap-readv-total-megabytes",
-#    "dcap-readv-num-successful-operations",
-#    "dcap-read-total-msecs",
-#    "dcap-readv-total-msecs",
-#    "tstoragefile-read-actual-num-successful-operations",
-#    "tstoragefile-read-actual-total-megabytes",
-#    "tstoragefile-read-actual-total-msecs",
-#    "tstoragefile-read-num-successful-operations",
-#    "tstoragefile-read-total-megabytes",
-#    "tstoragefile-read-via-cache-total-megabytes",
-#    "tstoragefile-read-via-cache-total-msecs",
-#    "tstoragefile-read-total-msecs",
-#    "tstoragefile-read-via-cache-num-successful-operations",
-#    "tstoragefile-seek-num-successful-operations",
-#    "tstoragefile-seek-total-msecs",
-#    "tstoragefile-write-total-megabytes",
-#    "tstoragefile-write-actual-total-megabytes"
-#    ]
 
 
 if len(argv)!=2:
@@ -123,8 +86,10 @@ for key in nextkey:
         if not histos.has_key(QUANT):
             histos[QUANT] = {}
         for s in samples:
-            if s == SAMPLE:
-                histos[QUANT][SAMPLE] = obj
+            myFilter = re.compile(s)
+            if myFilter.search(SAMPLE) == None: continue
+            histos[QUANT][SAMPLE] = obj
+            
 
 
 canvas = {}
@@ -132,6 +97,7 @@ legend = {}
 keys =  histos.keys()
 keys.sort()
 for quant in keys:
+
     toPlot = False
     for f in filter:
         myFilter = re.compile(f)
@@ -140,6 +106,8 @@ for quant in keys:
             break
 
     if not toPlot: continue
+
+    print quant 
 
     nHisto =  len( histos[quant].keys() ) 
     canvas[quant] = ROOT.TCanvas(LABEL+quant,LABEL+quant)
@@ -173,8 +141,12 @@ for quant in keys:
         #histos[quant][histo].SetStats(0000000)
 
         histos[quant][histo].SetTitle("")
-        histos[quant][histo].DrawNormalized(same)
-        
+        if quant.find("Error") == -1: 
+            histos[quant][histo].DrawNormalized(same)
+        else:
+            histos[quant][histo].Draw(same)
+                        
+                        
         histolabel = histo
         for cut in cuts:
             histolabel = histolabel.replace(cut,"")
@@ -184,5 +156,47 @@ for quant in keys:
     legend[quant].Draw()
         
 
-    
+#Print grand view
+
+viewCanvas = {}
+viewCanvas["Overview"] = ("CrabCpuPercentage",
+"CrabSysCpuTime",
+"CrabUserCpuTime",
+"ExeTime"
+)
+
+viewCanvas["Read-Msecs"] = ("tstoragefile-read-total-msecs",
+"tstoragefile-read-via-cache-total-msecs",
+"tstoragefile-read-prefetch-to-cache-total-msecs",
+"local-cache-read-total-msecs",
+"local-cache-readv-total-msecs",
+"gsidcap-read-total-msecs",
+"gsidcap-readv-total-msecs",
+"file-read-total-msecs",
+"file-readv-total-msecs"
+)
+
+viewTCanvas = {}
+for c in viewCanvas.keys():
+    viewTCanvas[c] = ROOT.TCanvas(LABEL+"-"+c,LABEL+"-"+c)
+    divideCanvas( viewTCanvas[c], len(viewCanvas[c]) )
+    i=1
+    for quant in viewCanvas[c]:
+        viewTCanvas[c].cd(i)
+        myH=1
+        if not histos.has_key(quant): continue
+        for h in histos[quant].keys():
+            same=""
+            if myH!= 1:
+                same = "sames"
+            else:
+                histos[quant][h].GetXaxis().SetTitle(quant)
+            
+            histos[quant][h].DrawNormalized(same)
+            
+            myH+=1
+        i+=1
+        legend[quant].Draw()
+    viewTCanvas[c].Draw()
+
 popen("sleep 60000")
