@@ -65,7 +65,7 @@ def parseStdOut(log_file,crab_stdout):
     for x in out:
         metric= x.strip("\n").split("=")[1].strip("%")
         metric = float(metric)
-        if metric == 0:
+        if metric == 0 or metric==60302:
             crab_stdout["Success"] = True
             break
         else:
@@ -175,7 +175,7 @@ def printWikiStat(DIR_SUMMARY):
         for dir in tasks:
             if not pError[err].has_key(dir): line += " // | "
             else:
-                line += "%s  |" %( pError[err][dir])
+                line += "%s%%  |" %( pError[err][dir])
         print line
 
     orderedLabels = {}
@@ -374,7 +374,7 @@ for dir in DIRS:
                 
 
         for err in SUMMARY["Error"].keys():
-            SUMMARY["Error"][err] = float(SUMMARY["Error"][err])/float(totalFiles)
+            SUMMARY["Error"][err] = round(100*float(SUMMARY["Error"][err])/float(totalFiles), 1)
 
         for label in LABELS:
             if label== "Success" or label == "Failures" or label == "Error": continue
@@ -396,21 +396,7 @@ if isRoot:
 
     DIR_SUMMARY_keys = DIR_SUMMARY.keys()
     DIR_SUMMARY_keys.sort()
-
     DIRS = os.listdir(argv[1])
-#    myCanvas = {}
-#    myH = {}
-#    for label in LABELS:
-#        if label== "Success" or label == "Failures": continue
-#        myH[label] = ROOT.TH1F(label,label,len(DIR_SUMMARY_keys ),0,1)
-#        bin=1
-#        for dir in DIR_SUMMARY_keys:
-#            if not DIR_SUMMARY[dir].has_key(label): continue
-#            myH[label].Fill(dir,DIR_SUMMARY[dir][label][0])
-#            myH[label].SetBinError(bin,DIR_SUMMARY[dir][label][1])
-#            bin+=1
-            
-#    single_Canvas = {}
     single_H = {}
     for label in LABELS:
         single_H[label] = {}
@@ -426,7 +412,6 @@ if isRoot:
         label="Error"
         single_H[label][dir] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+dir,dir,200,0,1)
         for err in DIR_SUMMARY[dir][label].keys():
-            print err, DIR_SUMMARY[dir][label][err]
             single_H[label][dir].Fill(err, DIR_SUMMARY[dir][label][err] )
 
     outFile.Write()

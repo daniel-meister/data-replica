@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: crab_cfrSamples.py,v 1.2 2009/11/19 16:38:20 leo Exp $
+# $Id: crab_cfrSamples.py,v 1.3 2009/11/24 17:47:34 leo Exp $
 #################################################################
 
 from sys import argv,exit
@@ -18,32 +18,32 @@ except:
     exit(1)
 
 LABEL = "PAT1_"
-#SAMPLE = "RH-AUTO_CH-AUTO_CACHE-20_15k" #"15k"
-SAMPLE = "15k"
+SEL_SAMPLE = "RH-AUTO_CH-AUTO_CACHE-20_15k" #"15k"
+#SAMPLE = "15k"
 
 
 samples = [
-"DESY-"+LABEL+SAMPLE,
-"UCSD-"+LABEL+SAMPLE,
-"Rome-"+LABEL+SAMPLE
+LABEL+SEL_SAMPLE
     ]
 
 cuts = [
     LABEL,
     "_100j_",
-    "_QCDPt80_"
+    "_QCDPt80-RECO_",
+    "CMSSW332"
     ]
 
 filter = [
-    ".*read.*(total-msecs|total-megabytes).*",
-#    ".*read.*(total-msecs).*",
-#    ".*write.*(total-msecs|total-megabytes).*",
+#    ".*read.*(total-msecs|total-megabytes).*",
+    ".*read-max-msec.*",
+##    ".*read.*(total-msecs).*",
+##    ".*write.*(total-msecs|total-megabytes).*",
     "Crab.*",
     "ExeTime",
     "Error"
 ]
 
-
+doSummary = False
 
 if len(argv)!=2:
     print """Usage: """+argv[0]+""" result_file.root"""
@@ -66,10 +66,8 @@ def divideCanvas(canvas, numberOfHisto):
 
 
 nextkey = ROOT.gDirectory.GetListOfKeys();
-#key = nextkey()
-#while key = nex=key():
-
-    #obj = key->ReadObj();
+sitePalette = {}
+myColor = 1
 
 histos = {}
 bins = {}
@@ -82,6 +80,11 @@ for key in nextkey:
         QUANT = histoName[histoName.find("QUANT")+len("QUANT"):
                           histoName.find("-SAMPLE")]
         SAMPLE = histoName[histoName.find("SAMPLE")+len("SAMPLE"):]
+
+        SITE =  SAMPLE.split("-")[0]
+        if not sitePalette.has_key(SITE): 
+            sitePalette[SITE] = myColor
+            myColor +=1
 
         if not histos.has_key(QUANT):
             histos[QUANT] = {}
@@ -110,7 +113,7 @@ for quant in keys:
     print quant 
 
     nHisto =  len( histos[quant].keys() ) 
-    canvas[quant] = ROOT.TCanvas(LABEL+quant,LABEL+quant)
+    canvas[quant] = ROOT.TCanvas(LABEL+SEL_SAMPLE+"-"+quant,LABEL+SEL_SAMPLE+"-"+quant)
     legend[quant] = ROOT.TLegend(0.15,0.8,0.9,0.9)
     legend[quant].SetTextFont(42)
     legend[quant].SetBorderSize(0)
@@ -129,7 +132,7 @@ for quant in keys:
         for cut in cuts:
             histolabel = histolabel.replace(cut,"")
 
-        histos[quant][histo].SetLineColor(h)
+        histos[quant][histo].SetLineColor( sitePalette[histo.split('-')[0]])
         histos[quant][histo].SetTitle(histolabel)
 
         if h!= 1:
@@ -138,7 +141,7 @@ for quant in keys:
              histos[quant][histo].GetXaxis().SetTitle(quant)
         histos[quant][histo].Rebin(4)
         histos[quant][histo].SetLineWidth(2)
-        #histos[quant][histo].SetStats(0000000)
+        histos[quant][histo].SetStats(0000000)
 
         histos[quant][histo].SetTitle("")
         if quant.find("Error") == -1: 
@@ -157,6 +160,7 @@ for quant in keys:
         
 
 #Print grand view
+if not doSummary: popen("sleep 6000000000")
 
 viewCanvas = {}
 viewCanvas["Overview"] = ("CrabCpuPercentage",
@@ -165,25 +169,33 @@ viewCanvas["Overview"] = ("CrabCpuPercentage",
 "ExeTime"
 )
 
-viewCanvas["Read-Msecs"] = ("tstoragefile-read-total-msecs",
-"tstoragefile-read-via-cache-total-msecs",
-"tstoragefile-read-prefetch-to-cache-total-msecs",
+viewCanvas["Read-Msecs"] = (
+"tstoragefile-read-total-msecs",
+#"tstoragefile-read-via-cache-total-msecs",
+#"tstoragefile-read-prefetch-to-cache-total-msecs",
 "local-cache-read-total-msecs",
 "local-cache-readv-total-msecs",
 "gsidcap-read-total-msecs",
 "gsidcap-readv-total-msecs",
+"dcap-read-total-msecs",
+"dcap-readv-total-msecs",
 "file-read-total-msecs",
 "file-readv-total-msecs"
 )
 
 viewTCanvas = {}
 for c in viewCanvas.keys():
-    viewTCanvas[c] = ROOT.TCanvas(LABEL+"-"+c,LABEL+"-"+c)
+    viewTCanvas[c] = ROOT.TCanvas(LABEL+SEL_SAMPLE+"-"+c,LABEL+SEL_SAMPLE+"-"+c)
+    ROOT.gPad.SetFillColor(0)
+    ROOT.gPad.SetBorderSize(0)
+
     divideCanvas( viewTCanvas[c], len(viewCanvas[c]) )
     i=1
     for quant in viewCanvas[c]:
         viewTCanvas[c].cd(i)
         myH=1
+        
+        #print histos.keys()
         if not histos.has_key(quant): continue
         for h in histos[quant].keys():
             same=""
@@ -192,6 +204,7 @@ for c in viewCanvas.keys():
             else:
                 histos[quant][h].GetXaxis().SetTitle(quant)
             
+            histos[quant][h].SetStats(0000000)
             histos[quant][h].DrawNormalized(same)
             
             myH+=1
