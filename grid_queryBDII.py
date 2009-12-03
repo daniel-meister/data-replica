@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id$
+# $Id: grid_queryBDII.py,v 1.3 2009/11/19 16:38:20 leo Exp $
 #################################################################
 
 
@@ -44,7 +44,7 @@ if INFO_TYPE == "se-technology":
     if options.select!="":
         print options.select
     else:
-        command = """ldapsearch -x -h lcg-bdii.cern.ch:2170 -p 2170 -b o=grid \'(&(objectClass=GlueSE))\' | grep -E \'dn|GlueSEImplementationName\' """ 
+        command = """ldapsearch -x -h lcg-bdii.cern.ch:2170 -p 2170 -b o=grid \'(&(objectClass=GlueSE))\' | grep -E \'dn|GlueSEImplementationName|GlueSEImplementationVersion\' """ 
 
 else:
     print "not available"
@@ -61,13 +61,19 @@ for l in pipe.readlines():
         if test!=-1:
             output_temp = l[test+len("GlueSEUniqueID="):].replace('Mds-Vo-name=','').split(',')
             siteName = output_temp[1]+" ("+output_temp[0]+")"
-            site[siteName]=''
+            site[siteName]={}
         else:
-            tech = l.replace('GlueSEImplementationName:',' ').lower()
-            site[siteName]= tech
+            tech = l
+            tech = tech.replace('GlueSEImplementationName:',' ')
+            tech = tech.replace('GlueSEImplementationVersion:',' ')
+            #tech.lower()
             
+            if l.find("GlueSEImplementationName")!=-1: site[siteName]["tech"] = tech
+            elif l.find("GlueSEImplementationVersion:")!=-1: site[siteName]["version"] = tech
 
 for s in site.keys():
     if site[s]!="":
-        print s, site[s]
-
+        line = s
+        for l in site[s].values():
+            line += l+" "  
+        print line    
