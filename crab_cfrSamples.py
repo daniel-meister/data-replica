@@ -4,12 +4,13 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: crab_cfrSamples.py,v 1.3 2009/11/24 17:47:34 leo Exp $
+# $Id: crab_cfrSamples.py,v 1.4 2009/11/27 10:50:28 leo Exp $
 #################################################################
 
 from sys import argv,exit
 from os import popen
 import re
+from crab_utilities import *
 
 try:
     import ROOT
@@ -17,25 +18,30 @@ except:
     print "ROOT cannot be loaded"
     exit(1)
 
-LABEL = "PAT1_"
-SEL_SAMPLE = "RH-AUTO_CH-AUTO_CACHE-20_15k" #"15k"
-#SAMPLE = "15k"
+LABEL = ""# "CIEMAT-"
+#SEL_SAMPLE = "RH-AUTO_CH-AUTO_CACHE-20_15k" #"15k"
+SEL_SAMPLE = "QCD_Pt80"
 
 
 samples = [
-LABEL+SEL_SAMPLE
+SEL_SAMPLE
     ]
 
 cuts = [
     LABEL,
-    "_100j_",
-    "_QCDPt80-RECO_",
-    "CMSSW332"
+    "-QCD_Pt80+Summer09.MC_31X_V3.v1+GEN.SIM.RECO-",
+    "300000-",
+    "15000",
+    "10000",
+    "CMSSW_3_1_4-",
+    "CMSSW_3_3_2-"
+
     ]
 
 filter = [
-#    ".*read.*(total-msecs|total-megabytes).*",
-    ".*read-max-msec.*",
+    ".*read.*(total-msecs|total-megabytes).*",
+    ".*(read-num-successful-operations).*",
+#    ".*read-max-msec.*",
 ##    ".*read.*(total-msecs).*",
 ##    ".*write.*(total-msecs|total-megabytes).*",
     "Crab.*",
@@ -43,123 +49,96 @@ filter = [
     "Error"
 ]
 
+plotTogether = [
+    #"cache-read-total-megabytes",
+    "read-total-megabytes",
+    "read-total-msecs",
+    "open-total-msecs",
+    "read-num-successful-operations"
+    ]
+
+
 doSummary = False
 
 if len(argv)!=2:
     print """Usage: """+argv[0]+""" result_file.root"""
 
 rootFile = ROOT.TFile(argv[1])
+cName = argv[1][:argv[1].find(".")]
 
-
-##########TO BE PUT IN EXT MODULE
-def divideCanvas(canvas, numberOfHisto):
-    if numberOfHisto <=3:
-        canvas.Divide(numberOfHisto)
-    elif numberOfHisto == 4:
-        canvas.Divide(2,2)
-    elif numberOfHisto == 8:
-        canvas.Divide(4,2)
-    elif  numberOfHisto >4 and numberOfHisto < 10:
-        canvas.Divide(3,3)
-    elif  numberOfHisto >=10 and numberOfHisto < 13:
-        canvas[label].Divide(3,4)
-
-
-nextkey = ROOT.gDirectory.GetListOfKeys();
+listOfHistoKeys = ROOT.gDirectory.GetListOfKeys();
 sitePalette = {}
-myColor = 1
-
-histos = {}
-bins = {}
-for key in nextkey:
-    obj = key.ReadObj();
-    if obj.IsA().InheritsFrom("TH1"):
-        histoName = obj.GetName()
-        if histoName.find("QUANT") == -1: continue
-        
-        QUANT = histoName[histoName.find("QUANT")+len("QUANT"):
-                          histoName.find("-SAMPLE")]
-        SAMPLE = histoName[histoName.find("SAMPLE")+len("SAMPLE"):]
-
-        SITE =  SAMPLE.split("-")[0]
-        if not sitePalette.has_key(SITE): 
-            sitePalette[SITE] = myColor
-            myColor +=1
-
-        if not histos.has_key(QUANT):
-            histos[QUANT] = {}
-        for s in samples:
-            myFilter = re.compile(s)
-            if myFilter.search(SAMPLE) == None: continue
-            histos[QUANT][SAMPLE] = obj
-            
+sePalette = {"dcap":1,"gsidcap":2,"file":5,"local":4,'tfile':5}
+histos, sitePalette =  getHistos(listOfHistoKeys, filter)
+keys =  histos.keys()
+keys.sort()
+toBePlotAlone, toBePlotTogether = findPlotTogetherHisto(plotTogether, keys)
 
 
 canvas = {}
 legend = {}
-keys =  histos.keys()
-keys.sort()
-for quant in keys:
-
-    toPlot = False
-    for f in filter:
-        myFilter = re.compile(f)
-        if not myFilter.search(quant) == None:
-            toPlot = True
-            break
-
-    if not toPlot: continue
-
-    print quant 
-
-    nHisto =  len( histos[quant].keys() ) 
-    canvas[quant] = ROOT.TCanvas(LABEL+SEL_SAMPLE+"-"+quant,LABEL+SEL_SAMPLE+"-"+quant)
-    legend[quant] = ROOT.TLegend(0.15,0.8,0.9,0.9)
-    legend[quant].SetTextFont(42)
-    legend[quant].SetBorderSize(0)
-
-    legend[quant].SetFillColor(0)
-
+for quant in toBePlotAlone:
     h=1
-    same = ""
     histoKeys =  histos[quant].keys()
     histoKeys.sort()
+    maxY = 0.0
+    firstLabel=''
     for histo in histoKeys:
-        ROOT.gPad.SetFillColor(0)
-        ROOT.gPad.SetBorderSize(0)
-        #canvas[sample].cd(h)
-        histolabel = histo
-        for cut in cuts:
-            histolabel = histolabel.replace(cut,"")
-
-        histos[quant][histo].SetLineColor( sitePalette[histo.split('-')[0]])
-        histos[quant][histo].SetTitle(histolabel)
-
-        if h!= 1:
-            same = "sames"
-        else:
-             histos[quant][histo].GetXaxis().SetTitle(quant)
-        histos[quant][histo].Rebin(4)
-        histos[quant][histo].SetLineWidth(2)
-        histos[quant][histo].SetStats(0000000)
-
-        histos[quant][histo].SetTitle("")
-        if quant.find("Error") == -1: 
-            histos[quant][histo].DrawNormalized(same)
-        else:
-            histos[quant][histo].Draw(same)
-                        
-                        
-        histolabel = histo
-        for cut in cuts:
-            histolabel = histolabel.replace(cut,"")
-        
-        legend[quant].AddEntry(histos[quant][histo],histolabel,"l" )
+        setHisto(histos[quant][histo], h, "","",quant,4 )
+        firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo,  maxY, quant )
         h +=1
+
+    if len(firstLabel)<2: continue
+    canvas[quant] = createCanvas(LABEL+cName+"-"+quant)
+    legend[quant] = createLegend()
+    if quant != "Error":  histos[quant][firstLabel[1]].DrawNormalized("")
+    else:  histos[quant][firstLabel[1]].Draw("")
+    for histo in histoKeys:
+        histolabel = histo
+        for cut in cuts: histolabel = histolabel.replace(cut,"")
+        legend[quant].AddEntry(histos[quant][histo],histolabel,"l" )
+        if histo==firstLabel[1]: continue
+        if quant != "Error": histos[quant][histo].DrawNormalized("sames")
+        else:  histos[quant][histo].Draw("sames")
     legend[quant].Draw()
         
 
+for sel in toBePlotTogether.keys():
+    firstHisto = True
+    goodHistos = {}
+    maxY = 0
+    firstLabel = ()
+    for quant in toBePlotTogether[sel]:
+        seType = quant.split("-")[0]
+        goodHistos[quant]=[]
+        histoKeys = histos[quant].keys()
+        histoKeys.sort()
+        h=1
+        for histo in histoKeys:
+            setHisto(histos[quant][histo], h,sePalette[seType] ,"",sel,10 )
+            firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo, maxY, quant, goodHistos[quant])
+            h+=1
+            
+    if firstLabel == (): continue
+    canvas[sel] = createCanvas(LABEL+"-"+sel)
+    legend[sel] = createLegend()
+    histos[firstLabel[0]][firstLabel[1]].DrawNormalized("")
+    
+    for quant in toBePlotTogether[sel]:
+        for histo in goodHistos[quant]:
+            histolabel = histo
+            for cut in cuts: histolabel = histolabel.replace(cut,"")
+            legend[sel].AddEntry(histos[quant][histo],histolabel+" "+quant.split("-")[0] ,"l" )
+            if quant==firstLabel[0] and histo==firstLabel[1]: continue
+            histos[quant][histo].DrawNormalized("same")
+            
+    legend[sel].Draw()
+#    canvas[sel].Update()
+#    canvas[sel].SaveAs(LABEL+"-"+sel+".png") 
+
+
 #Print grand view
+print "END"
 if not doSummary: popen("sleep 6000000000")
 
 viewCanvas = {}
