@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id$
+# $Id: data_replica.py,v 1.4 2009/11/19 16:38:20 leo Exp $
 #################################################################
 
 
@@ -90,6 +90,10 @@ parser.add_option("--debug",
 
 (options, args) = parser.parse_args()
 
+if len(args)<1:
+    print usage
+    exit(1)
+    
 list = open(args[0])
 if len(args) == 2:
     DESTINATION = args[1]
@@ -394,7 +398,7 @@ def logTransferHeader(entry, pfn_DESTINATION):
 
 print """\n##########################################
 Welcome to the DataReplica service
-from CSCS/ETHZ with love
+from PSI/ETHZ with love
 ##########################################\n"""
 
 print "You are at: ", MY_SITE
