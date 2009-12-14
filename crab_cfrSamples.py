@@ -11,6 +11,7 @@ from sys import argv,exit
 from os import popen
 import re
 from crab_utilities import *
+from optparse import OptionParser
 
 try:
     import ROOT
@@ -18,62 +19,117 @@ except:
     print "ROOT cannot be loaded"
     exit(1)
 
-LABEL = ""# "CIEMAT-"
-#SEL_SAMPLE = "RH-AUTO_CH-AUTO_CACHE-20_15k" #"15k"
-SEL_SAMPLE = "QCD_Pt80"
+usage = """%prog input.root <input2.root, ...> """
+parser = OptionParser(usage = usage, version="%prog 0.1")
+#parser.add_option("--logfile",action="store", dest="logfile",default="data_replica.log",
+#                  help="file for the phedex-like log, default is data_replica.log")
+parser.add_option("--save-png",
+                  action="store_true", dest="savePng", default=False,
+                  help="Saves created histos in png format")
+
+(options, args) = parser.parse_args()
+
+if len(args)<1:
+    print usage
+    print """For more help, """+argv[0]+" --help"
+    exit(1)
 
 
-samples = [
-SEL_SAMPLE
-    ]
+###if you want to add a label to canvas names
+LABEL=""
 
-cuts = [
-    LABEL,
-    "-QCD_Pt80+Summer09.MC_31X_V3.v1+GEN.SIM.RECO-",
-    "300000-",
-    "15000",
-    "10000",
-    "CMSSW_3_1_4-",
-    "CMSSW_3_3_2-"
-
-    ]
-
+###filter quantities to be plotted
 filter = [
     ".*read.*(total-msecs|total-megabytes).*",
-    ".*(read-num-successful-operations).*",
+#    ".*(read-num-successful-operations).*",
 #    ".*read-max-msec.*",
-##    ".*read.*(total-msecs).*",
-##    ".*write.*(total-msecs|total-megabytes).*",
+#    ".*read.*(total-msecs).*",
+    ".*seek.*(total-msecs|total-megabytes|num-successful-operations).*",
     "Crab.*",
-    "ExeTime",
+    "User",
     "Error"
 ]
 
+### plot these quantities overlapped (excluded)
 plotTogether = [
     #"cache-read-total-megabytes",
+    "readv-total-megabytes",
     "read-total-megabytes",
-    "read-total-msecs",
-    "open-total-msecs",
-    "read-num-successful-operations"
+    "readv-total-msecs",
+    "read-total-msecs"
+    #"open-total-msecs",
+    #"read-num-successful-operations"
     ]
 
 
-doSummary = False
+doSummary = True
 
-if len(argv)!=2:
-    print """Usage: """+argv[0]+""" result_file.root"""
 
-rootFile = ROOT.TFile(argv[1])
-cName = argv[1][:argv[1].find(".")]
+def getRebin(quant):
+    if quant.find("Percentage")!=-1: rebin=1
+    elif quant.find("Error")!=-1: rebin=1
+    else: rebin=1
+    return rebin
 
-listOfHistoKeys = ROOT.gDirectory.GetListOfKeys();
+
+fileList = []
+for arg in args:
+    if arg.find('*')!=-1 or arg.find('?')!=-1:
+        pipe=os.popen("ls "+arg)
+        for p in pipe.readlines():
+            fileList.append(p)
+    else:
+        fileList.append(arg)
+    
+
+
+
+
+toBePlotAlone = []
+toBePlotTogether = {}
 sitePalette = {}
-sePalette = {"dcap":1,"gsidcap":2,"file":5,"local":4,'tfile':5}
-histos, sitePalette =  getHistos(listOfHistoKeys, filter)
-keys =  histos.keys()
-keys.sort()
-toBePlotAlone, toBePlotTogether = findPlotTogetherHisto(plotTogether, keys)
+histos = {}
+sePalette = {"dcap":1,"gsidcap":2,"file":5,"local":4,'tfile':5,'rfio':6}
+rootFile = {}
+spName = {}
+STATS = {}
 
+cName = args[0][:args[0].find(".")]
+for file in fileList:
+    rootFile[file] =  ROOT.TFile(file)
+
+    listOfHistoKeys = ROOT.gDirectory.GetListOfKeys();
+    sitePalette =  getHistos(listOfHistoKeys, histos,  filter)
+    
+    keys =  histos.keys()
+    keys.sort()
+    findPlotTogetherHisto(plotTogether, keys,  toBePlotAlone, toBePlotTogether)
+    spName[file.strip(".root")] =  splitDirName(file.strip(".root"))
+
+    ###Stats from histos
+    for quant in keys: 
+        for sample in histos[quant].keys():
+            myH = histos[quant][sample]
+            if not STATS.has_key(sample): STATS[sample]={'Error':{}}
+            if quant == "Error": 
+                STATS[sample]["Failures"] = myH.Integral()
+                print  myH.Integral()
+                if not  histos["CrabCpuPercentage"].has_key(sample):
+                    STATS[sample]["Success"] = 0
+                else:
+                    STATS[sample]["Success"]  =  histos["CrabCpuPercentage"][sample].Integral() #- STATS[sample]["Failures"] 
+                for i in range(myH.GetNbinsX()):
+                    errLabel = myH.GetXaxis().GetBinLabel(i+1)
+                    if errLabel!="": 
+                        if not STATS[sample]["Error"].has_key(errLabel): 
+                            STATS[sample]["Error"][errLabel] = 0
+                        STATS[sample]["Error"][errLabel] = 100*round(myH.GetBinContent(i+1)/STATS[sample]["Failures"],1)
+            
+            # or quant == "Error": continue
+            else: STATS[sample][quant] = ( histos[quant][sample].GetMean(1), histos[quant][sample].GetRMS(1) )
+    
+
+printWikiStat(STATS, "", ".*(min|max).*")
 
 canvas = {}
 legend = {}
@@ -84,7 +140,8 @@ for quant in toBePlotAlone:
     maxY = 0.0
     firstLabel=''
     for histo in histoKeys:
-        setHisto(histos[quant][histo], h, "","",quant,4 )
+        rebin = getRebin(quant)
+        setHisto(histos[quant][histo], h, "","",quant,rebin )
         firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo,  maxY, quant )
         h +=1
 
@@ -94,14 +151,16 @@ for quant in toBePlotAlone:
     if quant != "Error":  histos[quant][firstLabel[1]].DrawNormalized("")
     else:  histos[quant][firstLabel[1]].Draw("")
     for histo in histoKeys:
-        histolabel = histo
-        for cut in cuts: histolabel = histolabel.replace(cut,"")
-        legend[quant].AddEntry(histos[quant][histo],histolabel,"l" )
+        legLabel = spName[histo]["Site"]+" "+spName[histo]["Cfg"]+" "+spName[histo]["Sw"] 
+        legend[quant].AddEntry(histos[quant][histo],legLabel,"l" )
+
         if histo==firstLabel[1]: continue
         if quant != "Error": histos[quant][histo].DrawNormalized("sames")
         else:  histos[quant][histo].Draw("sames")
     legend[quant].Draw()
-        
+    if options.savePng:
+        canvas[sel].Update()
+        canvas[sel].SaveAs(LABEL+"-"+sel+".png") 
 
 for sel in toBePlotTogether.keys():
     firstHisto = True
@@ -115,26 +174,27 @@ for sel in toBePlotTogether.keys():
         histoKeys.sort()
         h=1
         for histo in histoKeys:
-            setHisto(histos[quant][histo], h,sePalette[seType] ,"",sel,10 )
+            rebin = getRebin(quant)
+            setHisto(histos[quant][histo], h,sePalette[seType] ,"",sel, rebin )
             firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo, maxY, quant, goodHistos[quant])
             h+=1
             
     if firstLabel == (): continue
-    canvas[sel] = createCanvas(LABEL+"-"+sel)
+    canvas[sel] = createCanvas(LABEL+cName+"-"+sel)
     legend[sel] = createLegend()
     histos[firstLabel[0]][firstLabel[1]].DrawNormalized("")
     
     for quant in toBePlotTogether[sel]:
         for histo in goodHistos[quant]:
-            histolabel = histo
-            for cut in cuts: histolabel = histolabel.replace(cut,"")
-            legend[sel].AddEntry(histos[quant][histo],histolabel+" "+quant.split("-")[0] ,"l" )
+            legLabel = spName[histo]["Site"]+" "+spName[histo]["Cfg"]+" "+spName[histo]["Sw"]
+            legend[sel].AddEntry(histos[quant][histo],legLabel+" "+quant.split("-")[0] ,"l" )
             if quant==firstLabel[0] and histo==firstLabel[1]: continue
             histos[quant][histo].DrawNormalized("same")
             
     legend[sel].Draw()
-#    canvas[sel].Update()
-#    canvas[sel].SaveAs(LABEL+"-"+sel+".png") 
+    if options.savePng:
+        canvas[sel].Update()
+        canvas[sel].SaveAs(LABEL+"-"+sel+".png") 
 
 
 #Print grand view
@@ -142,29 +202,19 @@ print "END"
 if not doSummary: popen("sleep 6000000000")
 
 viewCanvas = {}
-viewCanvas["Overview"] = ("CrabCpuPercentage",
-"CrabSysCpuTime",
+viewCanvas["Overview"] = (
+"CrabCpuPercentage",
 "CrabUserCpuTime",
-"ExeTime"
+"CrabWrapperTime",
+"tstoragefile-read-total-msecs"
+
 )
 
-viewCanvas["Read-Msecs"] = (
-"tstoragefile-read-total-msecs",
-#"tstoragefile-read-via-cache-total-msecs",
-#"tstoragefile-read-prefetch-to-cache-total-msecs",
-"local-cache-read-total-msecs",
-"local-cache-readv-total-msecs",
-"gsidcap-read-total-msecs",
-"gsidcap-readv-total-msecs",
-"dcap-read-total-msecs",
-"dcap-readv-total-msecs",
-"file-read-total-msecs",
-"file-readv-total-msecs"
-)
 
 viewTCanvas = {}
 for c in viewCanvas.keys():
-    viewTCanvas[c] = ROOT.TCanvas(LABEL+SEL_SAMPLE+"-"+c,LABEL+SEL_SAMPLE+"-"+c)
+    
+    viewTCanvas[c] = createCanvas(LABEL+cName+"-"+c) 
     ROOT.gPad.SetFillColor(0)
     ROOT.gPad.SetBorderSize(0)
 
@@ -174,21 +224,27 @@ for c in viewCanvas.keys():
         viewTCanvas[c].cd(i)
         myH=1
         
-        #print histos.keys()
+        maxY = 0.0
+        firstLabel=()
+
         if not histos.has_key(quant): continue
         for h in histos[quant].keys():
-            same=""
-            if myH!= 1:
-                same = "sames"
-            else:
-                histos[quant][h].GetXaxis().SetTitle(quant)
-            
+            firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][h], h,  maxY, quant )
+            histos[quant][h].SetLineWidth(2)
             histos[quant][h].SetStats(0000000)
-            histos[quant][h].DrawNormalized(same)
             
             myH+=1
         i+=1
+
+        if firstLabel == (): continue
+        histos[firstLabel[0]][firstLabel[1]].DrawNormalized("")
+    
+        for h in histos[quant].keys():
+            histolabel = h
+            if h==firstLabel[1]: continue
+            histos[quant][h].DrawNormalized("same")
         legend[quant].Draw()
+
     viewTCanvas[c].Draw()
 
 popen("sleep 60000")
