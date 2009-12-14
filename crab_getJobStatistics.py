@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: crab_getJobStatistics.py,v 1.4 2009/11/27 10:50:28 leo Exp $
+# $Id: crab_getJobStatistics.py,v 1.6 2009/12/14 15:53:07 leo Exp $
 #################################################################
 
 
@@ -35,262 +35,59 @@ if len(argv)==3:
 else:
     OUTFILE = ""
 
-#myFilter=""
-#if len(argv)>2:
-#myFilter = argv[1]
 
-####### USE MAX RANGE FOR HISTOS
-
-LABELS = [#'ExeTime',
-          'CrabUserCpuTime',
-          'CrabSysCpuTime',
-          'CrabCpuPercentage',
-          'CrabWrapperTime'
-#          'User_Wall-Read_OverWall',
-#          'User_ReadMBJob'
-          #'CrabStageoutTime'
-          ]
+### Init array of quantities
+LABELS = [ ]
 
 
 def parseXML(myXML, mapping):
+    mapping["Success"] = False
+    mapping["Error"] = {}
+
     XML_file = open(myXML.strip("\n"))
     
     doc = xml.dom.minidom.parse(XML_file)
  
     for node in doc.getElementsByTagName("Metric"):
+        if node.attributes["Name"].value=="CpuTime":
+            cpuTime =  node.attributes["Value"].value.replace('"','').split(" ")
+            mapping["UserTime"] = cpuTime[0]
+            mapping["SysTime"] = cpuTime[1]
+            mapping["CpuPercentage"] = cpuTime[2].strip("%")
         mapping[node.attributes["Name"].value] = node.attributes["Value"].value 
         
+    for node in doc.getElementsByTagName("FrameworkError"):
+        mapping[node.attributes["Type"].value] = node.attributes["ExitStatus"].value
+
+    exitCode = float(mapping["ExeExitCode"])
+    if exitCode ==0:
+        mapping["Success"] = True
+    else:    
+        if not mapping["Error"].has_key( mapping["ExeExitCode"]  ):
+            mapping["Error"][ mapping["ExeExitCode"] ]=0
+        mapping["Error"][ mapping["ExeExitCode"] ]+=1
+    
     return mapping
-
-
-def parseStdOut(log_file,crab_stdout):
-    out =  os.popen("grep ExitCode "+log_file)
-    crab_stdout["Success"] = False
-    crab_stdout["Error"] = {}
- 
-    for x in out:
-        metric= x.strip("\n").split("=")[1].strip("%")
-        metric = float(metric)
-        if metric == 0 or metric==60302:
-            crab_stdout["Success"] = True
-            break
-        else:
-            if not crab_stdout["Error"].has_key(metric):
-                crab_stdout["Error"][metric]=0
-            crab_stdout["Error"][metric]+=1
-            
-    if not  crab_stdout["Success"]:
-        return crab_stdout
-
-    for label in LABELS:
-        out = os.popen("grep "+label+" "+log_file)
-        for x in out:
-            x_split = x.split("=")
-            if len(x_split)<2: continue
-            metric= x_split[1].strip("\n").strip("%")
-            if metric == "NULL":
-                metric=0
-            else:
-                metric = float(metric)
-                  
-            crab_stdout[label] = metric
-
-    return crab_stdout
 
 
 
 def parseCrabDir(logdir, subdir, totalFiles):
     job_output = {}
     lognum =  subdir[subdir.find("res/CMSSW"):].split("_")[1].split(".")[0]
-    log_file =  logdir+"CMSSW_"+str(lognum)+".stdout"
-    if float(os.stat( log_file).st_size)<1:
-        print "[ERROR] "+log_file+" EMPTY!"
-        return 1 #continue
-    else:
-        parseStdOut( log_file,job_output)
-        totalFiles += 1
 
-    if job_output["Success"]:
-        xml_file = logdir+"crab_fjr_"+str(lognum)+".xml"
-        if not os.path.isfile( xml_file ):
-            print "[ERROR] "+xml_file+" NOT FOUND!"
+    xml_file = logdir+"crab_fjr_"+str(lognum)+".xml"
+    if not os.path.isfile( xml_file ):
+        print "[ERROR] "+xml_file+" NOT FOUND!"
+        return 1
+    else:
+        if float(os.stat( xml_file ).st_size)<1:
+            print "[ERROR] "+xml_file+" EMPTY!"
+            return 1
         else:
-            if float(os.stat( xml_file ).st_size)<1:
-                print "[ERROR] "+xml_file+" EMPTY!"
-            else:
-                parseXML( xml_file,job_output)
+            parseXML( xml_file,job_output)
+            totalFiles += 1
     return job_output
 
-
-
-def computeStat(MEAN_COMP):
-    if MEAN_COMP["N"]==0:
-        mean = 0
-        variance = 0
-        return mean, variance
-        
-    mean = MEAN_COMP["X"]/MEAN_COMP["N"]
-    variance = MEAN_COMP["X2"]/MEAN_COMP["N"] - mean*mean
-    if variance >0:
-        variance = sqrt(variance)
-    else:
-        variance = 0
-    return mean, variance
-
-
-
-def printWikiStat(DIR_SUMMARY, posFilter, negFilter):
-    perc=0
-    header = "| |"
-    tasks = DIR_SUMMARY.keys()
-    tasks.sort()
-    for dir in tasks:
-        header += " *"+dir.split("-")[0]+"-"+dir.split("-")[1]+" "+dir.split("-")[-1][:8]+"* |"
-
-    print header
-    line = "| *Success*|"
-
-    for dir in tasks:
-        total = DIR_SUMMARY[dir]["Success"] + DIR_SUMMARY[dir]["Failures"]
-        if total==0:
-            perc = 0
-        else:
-            perc = 100*DIR_SUMMARY[dir]["Success"]/total
-            line += "%.1f%% (%.0f / %.0f) |" %(perc,DIR_SUMMARY[dir]["Success"], total)
-    print line
-
-    ### [dir][label] not useful here...
-    pError = {}
-    line=""
-    for dir in tasks:
-        for err in DIR_SUMMARY[dir]["Error"].keys():
-            if not pError.has_key(err):
-                pError[err] = {}
-            pError[err][dir] = DIR_SUMMARY[dir]["Error"][err]
-
-
-    for err in pError.keys():
-        line = "| *Error "+err+"* |"
-        for dir in tasks:
-            if not pError[err].has_key(dir): line += " // | "
-            else:
-                line += "%s%%  |" %( pError[err][dir])
-        print line
-
-    orderedLabels = {}
-    myPosFilter = re.compile(posFilter)
-    myNegFilter = re.compile(negFilter)
-
-    for label in LABELS:
-        if myPosFilter.search(label) == None or not myNegFilter.search(label) == None : continue
-
-        lwork = label.split("-")
-        if len(lwork)>2:
-            tech = lwork[0]
-            meas = lwork[1]
-            quant = lwork[-1]
-            char = ""
-            for x in lwork[2:-1]:
-                char = x+"-"
-            char.strip("-")
-            
-            if not orderedLabels.has_key(meas):
-                orderedLabels[meas] = {}
-            if not orderedLabels[meas].has_key(quant):
-                orderedLabels[meas][quant] = {}
-            if not orderedLabels[meas][quant].has_key(char):
-                orderedLabels[meas][quant][char] = []
-
-            orderedLabels[meas][quant][char].append(label)
-        else:
-            if label != "ExeExitCode" and label!="Success" and label!="Failures":
-                line = ""
-                line += "| *"+label+"*|"
-                for dir in tasks:
-                    if DIR_SUMMARY[dir].has_key(label):
-                        line += " %.2f +- %.2f |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
-                    else:
-                        line += " // |"
-            print line
-
-    line =""
-    orderedLabels2 = orderedLabels.keys()
-    orderedLabels2.sort()
-    for meas in orderedLabels2:
-        if not meas in ["read","readv","seek","open"]: continue
-        print "| *"+meas.upper()+"*||||||"
-        for quant in  orderedLabels[meas].keys():
-            for char in  orderedLabels[meas][quant].keys():
-                for label in  orderedLabels[meas][quant][char]:
-                    if label != "ExeExitCode" and label!="Success" and label!="Failures":
-                        line = ""
-                        line += "| *"+label+"*|"
-                        for dir in tasks:
-                            if DIR_SUMMARY[dir].has_key(label):
-                                line += " %.2f +- %.2f |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
-                            else:
-                                line += " // |"
-                        print line
-
-
-
-    
-
-def computeTotalStat(DIR_SUMMARY):
-    TOTAL_STAT = {}
-    for label in LABELS:
-        if label != "ExeExitCode":
-            TOTAL_STAT[label] = [0,0]
-
-    for label in TOTAL_STAT.keys():
-        for dir in DIR_SUMMARY.keys():
-            sigma2 = DIR_SUMMARY[dir][label][1]*DIR_SUMMARY[dir][label][1]
-            if sigma2 != 0:
-                TOTAL_STAT[label][0] += DIR_SUMMARY[dir][label][0]/sigma2
-                TOTAL_STAT[label][1] += 1/sigma2
-
-        if TOTAL_STAT[label][1]!=0:
-            TOTAL_STAT[label][0] /= TOTAL_STAT[label][1]
-            TOTAL_STAT[label][1] = sqrt(1/TOTAL_STAT[label][1])
-
-    TOTAL_STAT["Success"]  = 0
-    TOTAL_STAT["Failures"] = 0
-    for dir in DIR_SUMMARY.keys():
-        TOTAL_STAT["Success"] += DIR_SUMMARY[dir]["Success"]
-        TOTAL_STAT["Failures"] += DIR_SUMMARY[dir]["Failures"]
-        
-    return TOTAL_STAT
-
-
-
-
-
-def divideCanvas(canvas, numberOfHisto):
-    if numberOfHisto <=3:
-        canvas.Divide(numberOfHisto)
-    elif numberOfHisto == 4:
-        canvas.Divide(2,2)
-    elif numberOfHisto == 8:
-        canvas.Divide(4,2)
-    elif  numberOfHisto >4 and numberOfHisto < 10:
-        canvas.Divide(3,3)
-    elif  numberOfHisto >9 and numberOfHisto < 13:
-        canvas.Divide(3,4)
-
-
-
-#def splitDirName(dirName):
-#    output = {}
-#    ###The split("/")[-1] get rid of mother directories, eg mydir/crab_dir
-#    splittedDirName = dirName.split("/")[-1].split("-")
-#    output['Site'] = splittedDirName[0]
-#    output['Cfg'] = splittedDirName[1]
-#    output['Dataset'] = splittedDirName[2]
-#    output['EventsJob'] = splittedDirName[3]
-#    output['Sw'] = splittedDirName[4]
-#    output['Date'] = splittedDirName[5]
-    
-#    return output
 
     
 def computeErrorStat(job_output, SUMMARY):
@@ -353,13 +150,10 @@ def getJobStatistics(LOGDIR,OUTFILE):
     DIR_SUMMARY = {}
     SUMMARY = {} ###stores full stat
     SINGLE_DIR_DATA = {} ###stores single entries
-    #DIRS = os.listdir(argv[1])
 
-#    binEdges = {'low':{},'high':{}}
     firstDir = True
     tempI=0
- #   while tempI!=1:
- #       tempI=1
+
     
     #Begin dir analysis
     if os.path.isdir(LOGDIR)==False and os.path.islink(LOGDIR)==False:
@@ -403,7 +197,7 @@ def getJobStatistics(LOGDIR,OUTFILE):
         
         if job_output.has_key('tstoragefile-read-total-msecs'):
             totalReadTime += float(job_output['tstoragefile-read-total-msecs'])
-            job_output['User_Wall-Read_CpuPercentage'] = 100.*( float(job_output['CrabWrapperTime']) - totalReadTime/1000.)/float(job_output['CrabWrapperTime'])
+            job_output['User_Wall-Read_CpuPercentage'] = 100.*( float(job_output['ExeTime']) - totalReadTime/1000.)/float(job_output['ExeTime'])
 
 
         totalFiles+=1
@@ -429,8 +223,6 @@ def getJobStatistics(LOGDIR,OUTFILE):
         else: SUMMARY["Failures"] +=1
                 
     #end log cycle
-#    for err in SUMMARY["Error"].keys():
-#        SUMMARY["Error"][err] = #round(100*float(SUMMARY["Error"][err])/float(totalFiles), 1)
 
     LABELS.sort()
 
@@ -448,9 +240,6 @@ def getJobStatistics(LOGDIR,OUTFILE):
         for err in SUMMARY[label].keys():
             single_H[label].Fill(err, SUMMARY[label][err] )
 
-
-        #single_H = {}
-        #sampleName=OUTFILE.strip(".root")
         
         if float(SUMMARY["Success"])==0:
             print LOGDIR," has no successful job"
@@ -480,10 +269,6 @@ def getJobStatistics(LOGDIR,OUTFILE):
         outFile.Write()
         outFile.Close()
 
-#    for dir in DIR_SUMMARY:
-#        print dir
-
-#    printWikiStat(DIR_SUMMARY, "", ".*(min|max).*")
 
 
 
