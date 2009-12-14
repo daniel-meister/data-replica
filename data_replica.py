@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.4 2009/11/19 16:38:20 leo Exp $
+# $Id: data_replica.py,v 1.5 2009/12/08 09:10:25 leo Exp $
 #################################################################
 
 
@@ -20,7 +20,7 @@ DENIED_SITES = ["HU"]
 PROTOCOL = "srmv2"
 
 SRM_OPTIONS = "-streams_num=1 "
-SRM_OPTIONS += "-cksm_type=negotiate "
+#SRM_OPTIONS += "-cksm_type=negotiate "
 #SRM_OPTIONS += "-overwrite_mode=ALWAYS "
 SRM_OPTIONS += "-retry_num=1 "
 SRM_OPTIONS += "-request_lifetime=6000 "
@@ -204,6 +204,8 @@ def retrieve_pfn(lfn,site):
     for x in out:
         pfn = x.strip("\n")
 
+
+    print pfn
     return pfn
 
 
@@ -275,7 +277,6 @@ def copyFile(source, dest, srm_prot, myLog, logfile):
 
     SUCCESS = -1
     error_log = ""
-
     command = "unset SRM_PATH && srmcp "+srm_prot+" "+SRM_OPTIONS+" "+source["pfn"]+" "+dest+ " 2>&1"
     printDebug( command )
 
@@ -307,11 +308,14 @@ def copyFile(source, dest, srm_prot, myLog, logfile):
         #failed_f = open(FAILED_LOGFILE,"a")
         #failed_f.write(myLog["lfn"]+'\n')
         #failed_f.close()
-        
+
+    print "\t\t Elapsed Time: "+str( myLog["t-done"]-myLog["t-assign"] )+ " s"    
     print "\t\t Speed: "+str(speed)+" MB/s"
     print "\t\t Success: "+str(SUCCESS)
     print "\t\t Error: ",parseErrorLog(error_log)
     printDebug("\t\t Full Error: "+error_log)
+    printDebug("sleeping")
+    os.popen("sleep 30")
     return SUCCESS,error_log    
 
 
