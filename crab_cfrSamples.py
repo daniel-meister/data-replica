@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: crab_cfrSamples.py,v 1.4 2009/11/27 10:50:28 leo Exp $
+# $Id: crab_cfrSamples.py,v 1.6 2009/12/14 15:52:09 leo Exp $
 #################################################################
 
 from sys import argv,exit
@@ -45,7 +45,8 @@ filter = [
 #    ".*read-max-msec.*",
 #    ".*read.*(total-msecs).*",
     ".*seek.*(total-msecs|total-megabytes|num-successful-operations).*",
-    "Crab.*",
+    "Time",
+    "Percentage",
     "User",
     "Error"
 ]
@@ -114,10 +115,10 @@ for file in fileList:
             if quant == "Error": 
                 STATS[sample]["Failures"] = myH.Integral()
                 print  myH.Integral()
-                if not  histos["CrabCpuPercentage"].has_key(sample):
+                if not  histos["CpuPercentage"].has_key(sample):
                     STATS[sample]["Success"] = 0
                 else:
-                    STATS[sample]["Success"]  =  histos["CrabCpuPercentage"][sample].Integral() #- STATS[sample]["Failures"] 
+                    STATS[sample]["Success"]  =  histos["CpuPercentage"][sample].Integral() #- STATS[sample]["Failures"] 
                 for i in range(myH.GetNbinsX()):
                     errLabel = myH.GetXaxis().GetBinLabel(i+1)
                     if errLabel!="": 
@@ -203,9 +204,9 @@ if not doSummary: popen("sleep 6000000000")
 
 viewCanvas = {}
 viewCanvas["Overview"] = (
-"CrabCpuPercentage",
-"CrabUserCpuTime",
-"CrabWrapperTime",
+"CpuPercentage",
+"UserTime",
+"WrapperTime",
 "tstoragefile-read-total-msecs"
 
 )
