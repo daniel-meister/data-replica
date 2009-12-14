@@ -4,12 +4,12 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.5 2009/12/08 09:10:25 leo Exp $
+# $Id: data_replica.py,v 1.6 2009/12/14 16:57:07 leo Exp $
 #################################################################
 
 
 import os
-from os import popen
+from os import popen, path
 from sys import argv,exit
 from optparse import OptionParser
 from time import time
@@ -62,6 +62,10 @@ usage = """usage: %prog [options] list_file_to_be_transferred [dest_dir]
 
       data_replica filelist.list --from_site FROM_SITE  file:///`pwd`/
 
+  * Copying data from a local area: the list of files should contain only full paths:
+
+  data_replica.py --from_site=LOCAL --to_site T3_CH_PSI local.list /store/user/leo/test1
+
 """
 
 parser = OptionParser(usage = usage, version="%prog 0.1")
@@ -72,7 +76,7 @@ parser.add_option("--dbs",
                   help="Retrieve data distribution from DBS")
 parser.add_option("--from_site",
                   action="store", dest="FROM_SITE", default="",
-                  help="Source site, eg: T2_CH_CSCS")
+                  help="Source site, eg: T2_CH_CSCS. If LOCAL is indicated, the file list must be a list of global paths")
 parser.add_option("--to_site",
                   action="store", dest="TO_SITE", default="",
                   help="Destination file, eg: T2_CH_CSCS")
@@ -198,14 +202,16 @@ def retrieve_pfn(lfn,site):
     if len(lfn)<2:
         print "[ERROR] NO VALID LFN!!!"
         return 1
-    command = "wget -O- \"http://cmsweb.cern.ch/phedex/datasvc/xml/prod/lfn2pfn?node="+site+"&protocol="+PROTOCOL+"&lfn="+lfn+"""\" 2>/dev/null |sed -e \"s/.*pfn='\([^']*\).*/"""+r"\1\n"+"""/\" """
-    #print command
-    out = popen(command)
-    for x in out:
-        pfn = x.strip("\n")
 
+    if site=='LOCAL':
+        pfn = "file:///"+lfn
+    else:
+        command = "wget -O- \"http://cmsweb.cern.ch/phedex/datasvc/xml/prod/lfn2pfn?node="+site+"&protocol="+PROTOCOL+"&lfn="+lfn+"""\" 2>/dev/null |sed -e \"s/.*pfn='\([^']*\).*/"""+r"\1\n"+"""/\" """
+        out = popen(command)
+        for x in out:
+            pfn = x.strip("\n")
 
-    print pfn
+    printDebug(pfn)
     return pfn
 
 
@@ -300,6 +306,9 @@ def copyFile(source, dest, srm_prot, myLog, logfile):
 
         writePhedexLog(myLog,logfile)
 
+    else:
+        myLog["t-done"] = time()
+
     if SUCCESS == 0:
         speed = float(myLog["size"])/((1024*1024)*float(float(myLog["t-done"]) - float(myLog["t-xfer"]) ) )
         writeLog(SUCCESS_LOGFILE,myLog["lfn"]+'\n')
@@ -315,7 +324,7 @@ def copyFile(source, dest, srm_prot, myLog, logfile):
     print "\t\t Error: ",parseErrorLog(error_log)
     printDebug("\t\t Full Error: "+error_log)
     printDebug("sleeping")
-    os.popen("sleep 30")
+    os.popen("sleep 10")
     return SUCCESS,error_log    
 
 
@@ -393,7 +402,7 @@ def logTransferHeader(entry, pfn_DESTINATION):
     print "\n\t Trial from: "+entry["node"]+"--------------"
     print "\t\t From-PFN: "+entry["pfn"]
     print "\t\t To-PFN: "+pfn_DESTINATION
-    print "\t\t Size: "+entry["size"]
+    print "\t\t Size: "+entry["size"] + " bytes ("+str(float(entry['size'])/(1024*1024))+" MB)"
 
 
 
@@ -405,11 +414,10 @@ Welcome to the DataReplica service
 from PSI/ETHZ with love
 ##########################################\n"""
 
-print "You are at: ", MY_SITE
 print "Preferred Sites: ",PREFERRED_SITES
 print "Denied Sites: ", DENIED_SITES
+
 os.popen("sleep 5")
-os.popen("unset SRM_PATH")
 printDebug("phedex-like logfile: "+ options.logfile)
 
 filelist = {}
@@ -492,15 +500,25 @@ for lfn in list:
         else:
             pfn = retrieve_pfn(lfn,options.FROM_SITE)
             source = {"pfn":pfn,"node":options.FROM_SITE}
-            out_pipe = popen("lcg-ls -l "+pfn+" | awk '{print $5}'")
-            out = out_pipe.readlines()
-            out_pipe.close()
 
-            if len(out) == 0:
-                print "[ERROR] file does not exist on source"
-                writeLog(NOREPLICA_LOGFILE,myLog["lfn"]+'\n')
-                continue
-            source["size"] = out[0].strip("\n")
+            if options.FROM_SITE!='LOCAL':
+                out_pipe = popen("lcg-ls -l "+pfn+" | awk '{print $5}'")
+                out = out_pipe.readlines()
+                out_pipe.close()
+
+                if len(out) == 0:
+                    print "[ERROR] file does not exist on source"
+                    writeLog(NOREPLICA_LOGFILE,myLog["lfn"]+'\n')
+                    continue
+                source["size"] = out[0].strip("\n")
+            else:
+                ###Using lfn, as in this case is the full path
+                if not os.path.isfile(lfn):
+                    print "[ERROR] file does not exist on source"
+                    writeLog(NOREPLICA_LOGFILE,myLog["lfn"]+'\n')
+                    continue
+                source["size"] = str(os.path.getsize(lfn))
+                
             filename = lfn.split("/")[-1]
 
             if options.TO_SITE!="":
