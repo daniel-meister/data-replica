@@ -14,6 +14,7 @@ from sys import argv,exit
 import os
 from math import sqrt
 import re
+from crab_utilities import *
 
 isRoot = True
 
@@ -22,29 +23,33 @@ try:
 except:
     print "ROOT cannot be loaded, running textual only"
     isRoot = False
+    exit(1)
 
 if len(argv)<2:
-    print "USAGE: "+argv[0]+" dir_of_crab_dirs <outfile.root> <myFilter>"
+    print "USAGE: "+argv[0]+" crab_dir <outfile>"
     exit(1)
 
 LOGDIR = argv[1]
-if len(argv)>2:
+if len(argv)==3:
     OUTFILE = argv[2]
 else:
-    OUTFILE = "results.root"
+    OUTFILE = ""
 
-myFilter=""
-if len(argv)==4:
-    myFilter = argv[3]
+#myFilter=""
+#if len(argv)>2:
+#myFilter = argv[1]
 
 ####### USE MAX RANGE FOR HISTOS
 
-LABELS = ['ExeTime',
+LABELS = [#'ExeTime',
           'CrabUserCpuTime',
           'CrabSysCpuTime',
           'CrabCpuPercentage',
-          'CrabWrapperTime',
-          'CrabStageoutTime']
+          'CrabWrapperTime'
+#          'User_Wall-Read_OverWall',
+#          'User_ReadMBJob'
+          #'CrabStageoutTime'
+          ]
 
 
 def parseXML(myXML, mapping):
@@ -140,7 +145,7 @@ def printWikiStat(DIR_SUMMARY, posFilter, negFilter):
     tasks = DIR_SUMMARY.keys()
     tasks.sort()
     for dir in tasks:
-        header += " *"+dir+"* |"
+        header += " *"+dir.split("-")[0]+"-"+dir.split("-")[1]+" "+dir.split("-")[-1][:8]+"* |"
 
     print header
     line = "| *Success*|"
@@ -274,97 +279,158 @@ def divideCanvas(canvas, numberOfHisto):
 
 
 
-
-
-
-
-
-def getJobStatistics(LOGDIR,OUTFILE,myfilter):
-    DIR_SUMMARY = {}
-    SUMMARY = {}
-    SINGLE_DIR_DATA = {}
-    DIRS = os.listdir(argv[1])
-
-    binEdges = {'low':{},'high':{}}
-    for dir in DIRS:
-        filter = re.compile(myFilter)
-        if not filter.search(dir): continue
+#def splitDirName(dirName):
+#    output = {}
+#    ###The split("/")[-1] get rid of mother directories, eg mydir/crab_dir
+#    splittedDirName = dirName.split("/")[-1].split("-")
+#    output['Site'] = splittedDirName[0]
+#    output['Cfg'] = splittedDirName[1]
+#    output['Dataset'] = splittedDirName[2]
+#    output['EventsJob'] = splittedDirName[3]
+#    output['Sw'] = splittedDirName[4]
+#    output['Date'] = splittedDirName[5]
     
-        SUMMARY = {"Success":0, "Failures":0, "Error":{}}
-        MEAN_COMP = {}
+#    return output
 
-        #Begin dir analysis
-        if os.path.isdir(LOGDIR+"/"+dir) == True:
-            print "Analyzing "+dir
-            totalFiles = 0
-            #Parsing Files
-            logdir = LOGDIR+"/"+dir+"/res/"
-            LOGS = os.popen("ls "+logdir+"*.stdout")
-            for x in LOGS:
-                #Parse crabDir
-                rValue = parseCrabDir(logdir, x, totalFiles)
-                if rValue!=1: job_output = rValue
-                else: continue
-                #end Parse crabDir
-
-                #Computing err statistics
-                if not job_output["Success"]:
-                    for err in job_output["Error"].keys():
-                        err = str(err)
-                        err = err[:err.find(".")]
-                        if not SUMMARY["Error"].has_key(err): SUMMARY["Error"][err] = 0
-                        SUMMARY["Error"][err] += 1
+    
+def computeErrorStat(job_output, SUMMARY):
+    #Computing err statistics
+    if not job_output["Success"]:
+        for err in job_output["Error"].keys():
+            err = str(err)
+            err = err[:err.find(".")]
+            if not SUMMARY["Error"].has_key(err): SUMMARY["Error"][err] = 0
+            SUMMARY["Error"][err] += 1
                 #End comp error stat
 
-                #begin label cycle
-                for label in job_output.keys():
-                    try: 
-                        float( job_output[label])
-                        if not label in LABELS: LABELS.append(label)
-                    except: 
-                        continue
+
+def setBinEdges(job_output, label):
+    binEdges={}
+    #if label == "tstoragefile-read-total-msecs":
+    #    lowerBin = 0.0
+    #    upperBin = 1000.*1000.
+    #    bins = 200
+    if label.find("msecs") != -1:
+        binEdges['lowerBin'] = 0.0
+        binEdges['upperBin'] = 100*60000. ###6k secs 
+        binEdges['bins'] = 1000 ##60 secs bin
+    elif label.find("Percentage") != -1:
+        binEdges['lowerBin'] = 0.0
+        binEdges['upperBin'] = 100.
+        binEdges['bins'] = 100 
+    elif label.find("Time") != -1:
+        binEdges['lowerBin'] = 0.0
+        binEdges['upperBin'] = 40000. ### 40k secs=11h
+        binEdges['bins'] = 4000 ### 10 secs bin 
+    elif label.find("num-operations") != -1:
+        binEdges['lowerBin'] = 0.0
+        binEdges['upperBin'] = 100000. 
+        binEdges['bins'] = 10000 
+    elif label.find("Error") != -1:
+        binEdges['lowerBin'] = 0.0
+        binEdges['upperBin'] = 1. 
+        binEdges['bins'] = 1    
+    else:
+        binEdges['lowerBin'] = 0
+        binEdges['upperBin'] = 10000
+        binEdges['bins'] = 10000    
+    return binEdges
+    #begin edges if
+#    if not binEdges['low'].has_key(label):
+#        binEdges['low'][label] = 9999999
+#        binEdges['high'][label] = 0
+    #end edges if
+
+    #begin job output if
+#    if job_output.has_key(label):
+#        value =  float(job_output[label])
+#        if value <  binEdges['low'][label]:  binEdges['low'][label] = value
+#        if value >  binEdges['high'][label]: binEdges['high'][label] = value
+
+
+
+def getJobStatistics(LOGDIR,OUTFILE):
+    DIR_SUMMARY = {}
+    SUMMARY = {} ###stores full stat
+    SINGLE_DIR_DATA = {} ###stores single entries
+    #DIRS = os.listdir(argv[1])
+
+#    binEdges = {'low':{},'high':{}}
+    firstDir = True
+    tempI=0
+ #   while tempI!=1:
+ #       tempI=1
+    
+    #Begin dir analysis
+    if os.path.isdir(LOGDIR)==False and os.path.islink(LOGDIR)==False:
+        print "Directory not Valid"
+        exit(1)
+
+
+    SUMMARY = {"Success":0, "Failures":0, "Error":{}}
+    spDirName = splitDirName(LOGDIR)
+    #if OUTFILE=="":
+    #    OUTFILE = spDirName["Site"]+"-"+spDirName["Cfg"]+"-"+spDirName['EventsJob']+"-"+spDirName['Sw']+"-"+spDirName['Date']+".root"
+    OUTFILE = LOGDIR.strip('/').split("/")[-1]+'.root' 
+        
+    print "OutFile:",OUTFILE
+    print "Analyzing "+LOGDIR
+
+    totalFiles = 0
+    ###Parsing Files
+    logdir = LOGDIR+"/res/"
+    LOGS = os.popen("ls "+logdir+"*.stdout")
+    for x in LOGS:
+        #Parse crabDir
+        rValue = parseCrabDir(logdir, x, totalFiles)
+        if rValue!=1: job_output = rValue
+        else: continue
+        #end Parse crabDir
+
+        spName = splitDirName(LOGDIR)
+        ###UserQuantities
+        totalMB = 0
+        totalReadTime = 0
+        for quant in job_output.keys():
+            if len(quant.split('-'))==4 and quant.find('readv-total-megabytes')!=-1:
+                totalMB += float(job_output[quant])
+            if len(quant.split('-'))==4 and quant.find('readv-total-msecs')!=-1:
+                totalReadTime += float(job_output[quant])
+
+        if job_output.has_key('tstoragefile-read-total-megabytes'):
+            totalMB += float(job_output['tstoragefile-read-total-megabytes'])
+            job_output['User_ReadkBEvt'] = 1024*totalMB/float(spName['EventsJob'])
+        
+        if job_output.has_key('tstoragefile-read-total-msecs'):
+            totalReadTime += float(job_output['tstoragefile-read-total-msecs'])
+            job_output['User_Wall-Read_CpuPercentage'] = 100.*( float(job_output['CrabWrapperTime']) - totalReadTime/1000.)/float(job_output['CrabWrapperTime'])
+
+
+        totalFiles+=1
+        computeErrorStat(job_output, SUMMARY)
+
+        #begin label cycle
+        for label in job_output.keys():
+            ### checks for float values
+            try: 
+                float( job_output[label])
+                if not label in LABELS: LABELS.append(label)
+            except: 
+                continue
+
+            #begin job output if
+            if job_output.has_key(label):
+                if not SINGLE_DIR_DATA.has_key(label): SINGLE_DIR_DATA[label] = []
+                SINGLE_DIR_DATA[label].append(float(job_output[label]))
+            #end job output if
+
+        #end label cycle
+        if job_output["Success"]==True: SUMMARY["Success"] +=1
+        else: SUMMARY["Failures"] +=1
                 
-                    #begin edges if
-                    if not binEdges['low'].has_key(label):
-                        binEdges['low'][label] = 9999999
-                        binEdges['high'][label] = 0
-                    #end edges if
-
-                    #begin job output if
-                    if job_output.has_key(label):
-                        value =  float(job_output[label])
-                        if value <  binEdges['low'][label]:  binEdges['low'][label] = value
-                        if value >  binEdges['high'][label]: binEdges['high'][label] = value
-                    
-                        if not SINGLE_DIR_DATA.has_key(label): SINGLE_DIR_DATA[label] = {}
-                        if not SINGLE_DIR_DATA[label].has_key(dir): SINGLE_DIR_DATA[label][dir] = []
-                         
-                        SINGLE_DIR_DATA[label][dir].append(float(job_output[label]))
-               
-                        if not isRoot:
-                            if not SUMMARY.has_key(label): SUMMARY[label] = 0
-                            if not MEAN_COMP.has_key(label): MEAN_COMP[label] = {"N":0,"X":0,"X2":0}
-                            MEAN_COMP[label]["N"]+= 1
-                            MEAN_COMP[label]["X"]+= float(job_output[label])
-                            MEAN_COMP[label]["X2"]+= float(job_output[label])*float(job_output[label])
-                    #end job output if
-
-                #end label cycle
-                if job_output["Success"]==True: SUMMARY["Success"] +=1
-                else: SUMMARY["Failures"] +=1
-                
-            #end log cycle
-            for err in SUMMARY["Error"].keys():
-                SUMMARY["Error"][err] = round(100*float(SUMMARY["Error"][err])/float(totalFiles), 1)
-
-            if not isRoot:
-                for label in LABELS:
-                    if label== "Success" or label == "Failures" or label == "Error": continue
-                    if not MEAN_COMP.has_key(label): continue
-                    SUMMARY[label] = computeStat(MEAN_COMP[label])
-
-            DIR_SUMMARY[dir] = SUMMARY
-    #end dir cycle
+    #end log cycle
+#    for err in SUMMARY["Error"].keys():
+#        SUMMARY["Error"][err] = #round(100*float(SUMMARY["Error"][err])/float(totalFiles), 1)
 
     LABELS.sort()
 
@@ -372,44 +438,55 @@ def getJobStatistics(LOGDIR,OUTFILE,myfilter):
     if isRoot:
         outFile = ROOT.TFile(OUTFILE,"RECREATE")
 
-        DIR_SUMMARY_keys = DIR_SUMMARY.keys()
-        DIR_SUMMARY_keys.sort()
-        DIRS = os.listdir(argv[1])
         single_H = {}
-        for label in LABELS:
-            single_H[label] = {}
-            for dir in DIR_SUMMARY_keys:
-                if not SINGLE_DIR_DATA[label].has_key(dir): continue
-                single_H[label][dir] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+dir,dir,200,0.9*binEdges['low'][label],1.1*binEdges['high'][label])
-                single_H[label][dir].StatOverflows(ROOT.kTRUE)
-                for entry in SINGLE_DIR_DATA[label][dir]:
-                    single_H[label][dir].Fill(entry)
+        sampleName=OUTFILE.strip(".root")
 
         ### ERRORS HAVE A DIFFERENT TREATMENT
         single_H["Error"] = {}
-        for dir in DIR_SUMMARY.keys():
-            label="Error"
-            single_H[label][dir] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+dir,dir,200,0,1)
-            for err in DIR_SUMMARY[dir][label].keys():
-                single_H[label][dir].Fill(err, DIR_SUMMARY[dir][label][err] )
+        label="Error"
+        single_H[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName,sampleName,200,0,1)
+        for err in SUMMARY[label].keys():
+            single_H[label].Fill(err, SUMMARY[label][err] )
 
-        for dir in DIR_SUMMARY_keys: 
-            for label in LABELS:
-                if label== "Success" or label == "Failures" or label == "Error": continue
-                if single_H[label].has_key(dir):
-                    DIR_SUMMARY[dir][label] = ( single_H[label][dir].GetMean(1), single_H[label][dir].GetRMS(1) )
+
+        #single_H = {}
+        #sampleName=OUTFILE.strip(".root")
+        
+        if float(SUMMARY["Success"])==0:
+            print LOGDIR," has no successful job"
+            outFile.Write()
+            outFile.Close()
+            exit(0)
+
+        for label in LABELS:
+            single_H[label] = {}
+            binEdges = setBinEdges(job_output,label) 
+            single_H[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName, sampleName, binEdges['bins'], binEdges['lowerBin'], binEdges['upperBin'])
+            single_H[label].StatOverflows(ROOT.kTRUE)
+            
+            if not SINGLE_DIR_DATA.has_key(label):
+                print "[WARNING]: "+label+" quantity not available"
+                continue
+
+            for entry in SINGLE_DIR_DATA[label]:
+                #print entry
+                single_H[label].Fill(entry)
+
+            if label == "tstoragefile-read-total-msecs":
+                nBins = single_H[label].GetNbinsX()
+                single_H[label].SetBinContent( nBins , single_H[label].GetBinContent( nBins )+
+                                                        single_H[label].GetBinContent( nBins+1 )) 
 
         outFile.Write()
         outFile.Close()
 
-    for dir in DIR_SUMMARY:
-        print dir
+#    for dir in DIR_SUMMARY:
+#        print dir
 
-    printWikiStat(DIR_SUMMARY, "", ".*(min|max|actual).*")
-
-
+#    printWikiStat(DIR_SUMMARY, "", ".*(min|max).*")
 
 
-print __name__
+
+
 if __name__ == '__main__':
-    getJobStatistics(LOGDIR,OUTFILE,myFilter)
+    getJobStatistics(LOGDIR,OUTFILE)
