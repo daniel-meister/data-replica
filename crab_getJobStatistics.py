@@ -4,8 +4,14 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: crab_getJobStatistics.py,v 1.6 2009/12/14 15:53:07 leo Exp $
+# $Id: crab_getJobStatistics.py,v 1.7 2009/12/14 16:42:44 leo Exp $
 #################################################################
+
+
+#
+# put options for xml/log file names
+#
+#
 
 
 import xml.dom.minidom
@@ -15,6 +21,7 @@ import os
 from math import sqrt
 import re
 from crab_utilities import *
+from optparse import OptionParser
 
 isRoot = True
 
@@ -25,29 +32,43 @@ except:
     isRoot = False
     exit(1)
 
+
+
+usage = ""
+parser = OptionParser(usage = usage)
+parser.add_option("--type",action="store", dest="TYPE",default="CRAB",
+                  help="Type of the log/xml files, can be CRAB or CMSSW")
+
+
+(options, args) = parser.parse_args()
+
+
 if len(argv)<2:
     print "USAGE: "+argv[0]+" crab_dir <outfile>"
     exit(1)
 
-LOGDIR = argv[1]
-if len(argv)==3:
-    OUTFILE = argv[2]
+LOGDIR = args[0]
+if len(args)>1:
+    OUTFILE = args[1]
 else:
     OUTFILE = ""
+
+
+
+
 
 
 ### Init array of quantities
 LABELS = [ ]
 
 
-def parseXML(myXML, mapping):
-    mapping["Success"] = False
-    mapping["Error"] = {}
+def parseXML_Crab(myXML, mapping):
+#    mapping["Success"] = False
+#    mapping["Error"] = {}
 
-    XML_file = open(myXML.strip("\n"))
-    
+    XML_file = open(myXML.strip("\n").strip(" "))
     doc = xml.dom.minidom.parse(XML_file)
- 
+
     for node in doc.getElementsByTagName("Metric"):
         if node.attributes["Name"].value=="CpuTime":
             cpuTime =  node.attributes["Value"].value.replace('"','').split(" ")
@@ -60,34 +81,107 @@ def parseXML(myXML, mapping):
         mapping[node.attributes["Type"].value] = node.attributes["ExitStatus"].value
 
     exitCode = float(mapping["ExeExitCode"])
-    if exitCode ==0:
-        mapping["Success"] = True
-    else:    
-        if not mapping["Error"].has_key( mapping["ExeExitCode"]  ):
-            mapping["Error"][ mapping["ExeExitCode"] ]=0
-        mapping["Error"][ mapping["ExeExitCode"] ]+=1
+#    if exitCode ==0:
+#        mapping["Success"] = True
+#    else:    
+#        if not mapping["Error"].has_key( mapping["ExeExitCode"]  ):
+#            mapping["Error"][ mapping["ExeExitCode"] ]=0
+#        mapping["Error"][ mapping["ExeExitCode"] ]+=1
     
     return mapping
 
 
+def parseXML_CMSSW(myXML, mapping):
+    mapping["Success"] = False
+    mapping["Error"] = {}
 
-def parseCrabDir(logdir, subdir, totalFiles):
+    XML_file = open(myXML.strip("\n"))
+    
+    doc = xml.dom.minidom.parse(XML_file)
+    for node in doc.getElementsByTagName("Metric"):
+        perfType = node.parentNode.attributes["Metric"].value
+        mapping[perfType+"_"+node.attributes["Name"].value] =  node.attributes["Value"].value 
+        
+    for node in doc.getElementsByTagName("counter-value"):
+        perfType = node.parentNode.localName
+        if perfType == "storage-timing-summary":
+            subsystem =  node.attributes["subsystem"].value
+            type = node.attributes["counter-name"].value
+            for attr in node.attributes.keys():
+                if attr== "subsystem" or  attr== "counter-name": continue
+                mapping[perfType+"_"+subsystem+"-"+type+"-"+ attr] = node.attributes[attr].value
+        
+    for x in mapping.keys():
+        print x, mapping[x]
+    return mapping
+
+
+def parseCrab_stdOut(log_file,crab_stdout):
+    out =  os.popen("grep ExitCode "+log_file)
+    crab_stdout["Success"] = False
+    crab_stdout["Error"] = {}
+ 
+    for x in out:
+        metric= x.strip("\n").split("=")[1].strip("%")
+        metric = float(metric)
+        if metric == 0:
+            crab_stdout["Success"] = True
+            break
+        else:
+            if not crab_stdout["Error"].has_key(metric):
+                crab_stdout["Error"][metric]=0
+            crab_stdout["Error"][metric]+=1
+            
+    return crab_stdout
+
+
+
+def parseDir_Crab(logdir, subdir, totalFiles):
     job_output = {}
     lognum =  subdir[subdir.find("res/CMSSW"):].split("_")[1].split(".")[0]
+    log_file =  logdir+"CMSSW_"+str(lognum)+".stdout"
 
-    xml_file = logdir+"crab_fjr_"+str(lognum)+".xml"
-    if not os.path.isfile( xml_file ):
-        print "[ERROR] "+xml_file+" NOT FOUND!"
-        return 1
+    if float(os.stat( log_file).st_size)<1:
+        print "[ERROR] "+log_file+" EMPTY!"
+        return 1 #continue
     else:
-        if float(os.stat( xml_file ).st_size)<1:
-            print "[ERROR] "+xml_file+" EMPTY!"
-            return 1
-        else:
-            parseXML( xml_file,job_output)
-            totalFiles += 1
+        parseCrab_stdOut( log_file,job_output)
+        totalFiles += 1
+
+        if job_output["Success"]:
+
+            xml_file = logdir+"crab_fjr_"+str(lognum)+".xml"
+            if not os.path.isfile( xml_file ):
+                print "[ERROR] "+xml_file+" NOT FOUND!"
+                return 1
+            else:
+                if float(os.stat( xml_file ).st_size)<1:
+                    print "[ERROR] "+xml_file+" EMPTY!"
+                    return 1
+                else:
+                    parseXML_Crab( xml_file,job_output)
+                    totalFiles += 1
+    
     return job_output
 
+
+def parseDir_CMSSW(logname, totalFiles):
+    job_output = {}
+    
+    xmlFile = logname
+    logFile = xmlFile.replace(".xml",".stdout")
+
+    if not os.path.isfile( xmlFile ):
+        print "[ERROR] "+xmlFile+" NOT FOUND!"
+        return 1
+    elif float(os.stat( xmlFile ).st_size)<1:
+        print "[ERROR] "+xmlFile+" EMPTY!"
+        return 1
+    else:
+        parseXML_CMSSW( xmlFile,job_output)
+        totalFiles += 1
+    
+    return job_output
 
     
 def computeErrorStat(job_output, SUMMARY):
@@ -150,6 +244,7 @@ def getJobStatistics(LOGDIR,OUTFILE):
     DIR_SUMMARY = {}
     SUMMARY = {} ###stores full stat
     SINGLE_DIR_DATA = {} ###stores single entries
+    MEAN_COMP = {} ### stores stat info
 
     firstDir = True
     tempI=0
@@ -157,7 +252,8 @@ def getJobStatistics(LOGDIR,OUTFILE):
     
     #Begin dir analysis
     if os.path.isdir(LOGDIR)==False and os.path.islink(LOGDIR)==False:
-        print "Directory not Valid"
+        print LOGDIR
+        print "[ERROR] Directory not Valid"
         exit(1)
 
 
@@ -173,10 +269,17 @@ def getJobStatistics(LOGDIR,OUTFILE):
     totalFiles = 0
     ###Parsing Files
     logdir = LOGDIR+"/res/"
-    LOGS = os.popen("ls "+logdir+"*.stdout")
+    if options.TYPE == "CRAB": LOGS = os.popen("ls "+logdir+"*.stdout")
+    elif  options.TYPE == "CMSSW": LOGS = os.popen("ls "+LOGDIR+"/*.xml")
+    else: 
+        print "[ERROR No valit log/xml file given]"
+        exit(1)
     for x in LOGS:
         #Parse crabDir
-        rValue = parseCrabDir(logdir, x, totalFiles)
+        x = x.strip('\n')
+        if options.TYPE == "CRAB": rValue = parseDir_Crab(logdir, x, totalFiles)
+        elif  options.TYPE == "CMSSW": rValue = parseDir_CMSSW( x, totalFiles)
+        
         if rValue!=1: job_output = rValue
         else: continue
         #end Parse crabDir
@@ -216,13 +319,21 @@ def getJobStatistics(LOGDIR,OUTFILE):
             if job_output.has_key(label):
                 if not SINGLE_DIR_DATA.has_key(label): SINGLE_DIR_DATA[label] = []
                 SINGLE_DIR_DATA[label].append(float(job_output[label]))
-            #end job output if
+
+                if not MEAN_COMP.has_key(label): MEAN_COMP[label] = {"N":0,"X":0,"X2":0}
+                MEAN_COMP[label]["N"]+= 1
+                MEAN_COMP[label]["X"]+= float(job_output[label])
+                MEAN_COMP[label]["X2"]+= float(job_output[label])*float(job_output[label])
+
+#end job output if
 
         #end label cycle
         if job_output["Success"]==True: SUMMARY["Success"] +=1
         else: SUMMARY["Failures"] +=1
                 
     #end log cycle
+
+
 
     LABELS.sort()
 
@@ -261,15 +372,15 @@ def getJobStatistics(LOGDIR,OUTFILE):
                 #print entry
                 single_H[label].Fill(entry)
 
-            if label == "tstoragefile-read-total-msecs":
-                nBins = single_H[label].GetNbinsX()
-                single_H[label].SetBinContent( nBins , single_H[label].GetBinContent( nBins )+
+            #if label == "tstoragefile-read-total-msecs":
+            nBins = single_H[label].GetNbinsX()
+            single_H[label].SetBinContent( nBins , single_H[label].GetBinContent( nBins )+
                                                         single_H[label].GetBinContent( nBins+1 )) 
 
         outFile.Write()
         outFile.Close()
 
-
+        
 
 
 
