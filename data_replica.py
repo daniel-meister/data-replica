@@ -4,21 +4,30 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.7 2009/12/14 17:51:41 leo Exp $
+# $Id: data_replica.py,v 1.8 2009/12/21 11:00:35 leo Exp $
 #################################################################
 
 
-# cleaned pfn creation (repeated twice)
+# fixed bug: no site list if no TO_SITE defined
+# modified logfiles names
+# inserted local staging for CASTOR from lxplus:
+#   - enabled by option --castor-stage
+#   - external loop for stager_get
+#   - single rfcp to $TMPDIR (/tmp if TMPDIR not set)
+#   - lcg-cp from local file
+#   - deletion of local file
+#   - checks: works only if launched from lxplus and --from_site=T2_CH_CAF
+
 
 import os
-from os import popen, path
+from os import popen, path, environ
 from sys import argv,exit
 from optparse import OptionParser
 from time import time
 
 
 PREFERRED_SITES = [""]
-DENIED_SITES = ["HU"]
+DENIED_SITES = ["CAF"]
 PROTOCOL = "srmv2"
 
 SRM_OPTIONS = "-streams_num=1 "
@@ -98,6 +107,10 @@ parser.add_option("--copy-tool",
                   action="store", dest="TOOL", default="lcg-cp",
                   help="Selects the copy tool to be used (lcg-cp or srmcp). By default lcg-cp is used")
 
+parser.add_option("--castor-stage",
+                  action="store_true", dest="CASTORSTAGE", default=False,
+                  help="Enables staging of Castor files in a local tmp dir. Works only on lxplus, and uses $TMPDIR as tmp dir.")
+
 
 (options, args) = parser.parse_args()
 
@@ -105,7 +118,6 @@ if len(args)<1:
     print usage
     exit(1)
     
-list = open(args[0])
 if len(args) == 2:
     DESTINATION = args[1]
 else:
@@ -137,12 +149,17 @@ if options.RECREATE_SUBDIRS and DESTINATION=="" and  options.usePDS:
     print "If you want to create a exact replica, you do not need --recreate_subdirs. Otherwise, you need to specify a dest_dir"
     exit(1)
 
+if options.CASTORSTAGE:
+    if os.environ["HOSTNAME"].find("lxplus")==-1 or options.TO_SITE!="T2_CH_CAF":
+        print "--castor-stage option works only from a lxplus machine and setting --to_site=T2_CH_CAF"
+        exit(1)
 
-FAILED_LOGFILE = "failedList_"+options.logfile
-SUCCESS_LOGFILE = "successList_"+options.logfile
-NOREPLICA_LOGFILE = "noReplica_"+options.logfile
+splittedLogfile = options.logfile.split(".")
+FAILED_LOGFILE = splittedLogfile[-2]+"_failedList.log"
+SUCCESS_LOGFILE = splittedLogfile[-2]+"_successList.log"
+NOREPLICA_LOGFILE =splittedLogfile[-2]+"_noReplica.log"
 
-MY_SITE = options.TO_SITE
+#MY_SITE = options.TO_SITE
 
 
 
@@ -168,6 +185,7 @@ def printDebug(string):
 
 ###given a lfn and an array, retrieves and stores in the array a dictionary like {"node", node_name}
 def retrieve_siteList(lfn,entry):
+    print "calling"
     if len(lfn)<2:
         print "[ERROR] NO VALID LFN!!!"
         return 1
@@ -181,8 +199,12 @@ def retrieve_siteList(lfn,entry):
         while init!=-1:
             init += len(" node='")
             site = x[init:][:x[init:].find("'")]
-            if site.find("CAF")==-1 and site.find("MSS")==-1 and site.find(MY_SITE)==-1:
+            ###this exclude the destination site from the list
+            if options.TO_SITE!="" and site.find(options.TO_SITE)!=-1: continue
+            
+            if site.find("MSS")==-1:
                 entry.append({"node":site} )
+               
             x = x[init:]
             init = x.find(" node='")
 
@@ -218,7 +240,7 @@ def retrieve_pfn(lfn,site):
         for x in out:
             pfn = x.strip("\n")
 
-    printDebug(pfn)
+    #printDebug(pfn)
     return pfn
 
 
@@ -276,7 +298,23 @@ def createSubdir(lfn, DESTINATION):
     return pfn_DESTINATION
 
 ###
-def copyFile(tool,source, dest, srm_prot, myLog, logfile):
+
+def castorStage(castor_pfn, tmp):
+    if tmp[-1]!= "/": tmp += "/"
+    
+    command = "rfcp "+castor_pfn+" "+tmp
+    pipe = os.popen(command)
+    exit_status = pipe.close()
+    filename = castor_pfn.split("/")[-1]
+
+    return tmp+filename, exit_status
+
+
+
+
+def copyFile(tool,source, dest, srm_prot, myLog, logfile, isStage):
+
+    printDebug("Starting copyFile")
 
     myLog["from"] = source["node"]
     myLog["to"] = options.TO_SITE
@@ -287,8 +325,31 @@ def copyFile(tool,source, dest, srm_prot, myLog, logfile):
     myLog["t-inxfer"] = time()
     myLog["t-xfer"] = time()
     myLog["size"] = source["size"]
-
     SUCCESS = -1
+    
+    if isStage:
+        castor_pfn = source["pfn"].split("=")[1]
+        printDebug("CastorStaging: from "+castor_pfn)
+        if not os.environ["TMPDIR"]: ##not sure about it
+            tmp = "/tmp/"
+        else:
+            tmp = os.environ["TMPDIR"]
+        printDebug("CastorStaging: to "+tmp)
+        local_pfn, stageExit =  castorStage(castor_pfn, tmp)
+        if stageExit == None:
+            stageExit = 0
+        printDebug("CastorStaging: result "+str(local_pfn)+" "+str(stageExit))
+        myLog["local-pfn"] = local_pfn
+        print "\t\t Local PFN: "+ local_pfn
+        if stageExit != 0:
+            myLog["t-done"] = time()
+            myLog["report-code"] = stageExit
+            stageError = "Castor error "+stageExit+" on file "+castor_pfn
+            myLog["detail"] = "" 
+            writePhedexLog(myLog,logfile)
+            print "\t\t Error: "+stageError
+        source["pfn"] = "file:///"+local_pfn
+    
     error_log = ""
     command = "unset SRM_PATH"
     if tool=="srmcp":
@@ -297,7 +358,7 @@ def copyFile(tool,source, dest, srm_prot, myLog, logfile):
         command += "&& lcg-cp -V cms  -T "+PROTOCOL+" -U "+PROTOCOL+" "+source["pfn"]+" "+dest+ " 2>&1"
     printDebug( command )
 
-    if not options.DRYRUN:
+    if not options.DRYRUN: 
         pipe = popen(command)
         out = pipe.readlines()
         for l in out:
@@ -328,14 +389,18 @@ def copyFile(tool,source, dest, srm_prot, myLog, logfile):
         #failed_f = open(FAILED_LOGFILE,"a")
         #failed_f.write(myLog["lfn"]+'\n')
         #failed_f.close()
-
+        
     print "\t\t Elapsed Time: "+str( myLog["t-done"]-myLog["t-assign"] )+ " s"    
     print "\t\t Speed: "+str(speed)+" MB/s"
     print "\t\t Success: "+str(SUCCESS)
     print "\t\t Error: ",parseErrorLog(error_log)
-    printDebug("\t\t Full Error: "+error_log)
+
+    pipe = os.popen("rm "+local_pfn)
+    printDebug("CastorStaging: deleted "+local_pfn)
+    printDebug("Full Error: "+error_log)
     printDebug("sleeping")
     os.popen("sleep 10")
+    
     return SUCCESS,error_log    
 
 
@@ -418,6 +483,9 @@ def logTransferHeader(entry, pfn_DESTINATION):
 
 
 
+
+
+
 ################### BEGIN of MAIN
 
 print """\n##########################################
@@ -437,8 +505,23 @@ total_files = str(pipe.readlines()[0]).strip("\n")
 pipe.close()
 
 counter = 0
-for lfn in list:
+list = open(args[0])
+
+### CASTOR staging to disk, prestaging
+if options.CASTORSTAGE:
+    print "Prestaging files from CASTOR"
+    for lfn in list.readlines():
+        lfn = lfn.strip("\n").strip(" ").strip("\t")
+        pfn = retrieve_pfn(lfn,options.FROM_SITE)
+        command = "stager_get -M "+pfn.split("=")[1]
+        pipe = os.popen(command)
+    print "Prestaging done"
+
+list.seek(0)
+for lfn in list.readlines():
     lfn = lfn.strip("\n").strip(" ").strip("\t")
+
+    printDebug("LFN: "+lfn)
 
     if lfn!= "":
         SUCCESS = 1
@@ -492,6 +575,9 @@ for lfn in list:
             else:
                 pfn_DESTINATION = DESTINATION+filename 
 
+
+
+              
             
         srm_prot = ""
         if PROTOCOL == "srmv2":
@@ -506,7 +592,7 @@ for lfn in list:
 
             for entry in sources_list:
                 logTransferHeader(entry, pfn_DESTINATION)
-                SUCCESS, error_log = copyFile(options.TOOL, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile)
+                SUCCESS, error_log = copyFile(options.TOOL, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, options.CASTORSTAGE)
                 if SUCCESS == 0:
                     break
                 
@@ -535,7 +621,7 @@ for lfn in list:
                 
 
             logTransferHeader(source,pfn_DESTINATION)
-            SUCCESS, error_log = copyFile(options.TOOL, source, pfn_DESTINATION, srm_prot, myLog, options.logfile)
+            SUCCESS, error_log = copyFile(options.TOOL, source, pfn_DESTINATION, srm_prot, myLog, options.logfile, options.CASTORSTAGE)
 
         if SUCCESS != 0:
             writeLog(FAILED_LOGFILE,lfn+"\n")
