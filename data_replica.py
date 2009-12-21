@@ -4,9 +4,11 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.6 2009/12/14 16:57:07 leo Exp $
+# $Id: data_replica.py,v 1.7 2009/12/14 17:51:41 leo Exp $
 #################################################################
 
+
+# cleaned pfn creation (repeated twice)
 
 import os
 from os import popen, path
@@ -41,19 +43,19 @@ usage = """usage: %prog [options] list_file_to_be_transferred [dest_dir]
     
 [USE CASES]
 
-  * Replicate a file list using DBS. In this case, a source nodes list is retrieved from PhEDEx data service: 
+  * Replicate a file list without specifying a source node (discovery). In this case, a source nodes list is retrieved from PhEDEx data service: 
 
-      data_replica --dbs filelist.list --to_site YOUR_SITE
+      data_replica --discovery filelist.list --to_site YOUR_SITE
 
-  * Replicate a file list using DBS and giving a destination folder:
+  * Replicate a file list using discovery and giving a destination folder:
 
-      data_replica --dbs filelist.list --to_site YOUR_SITE /store/user/leo
+      data_replica --discovery filelist.list --to_site YOUR_SITE /store/user/leo
 
-  * Replicate a file list NOT registered in DBS. In this case, you should specify --from_site.
+  * Replicate a file list NOT registered in PhEDEx. In this case, you should specify --from_site.
 
       data_replica filelist.list --from_site FROM_SITE --to_site YOUR_SITE
 
-  * Replicate a file list NOT registered in DBS, giving a destination folder.Also in this case, you should specify --from_site.
+  * Replicate a file list NOT registered in PhEDEx, giving a destination folder.Also in this case, you should specify --from_site.
 
       data_replica filelist.list --from_site FROM_SITE --to_site YOUR_SITE /store/user/leo
 
@@ -71,9 +73,9 @@ usage = """usage: %prog [options] list_file_to_be_transferred [dest_dir]
 parser = OptionParser(usage = usage, version="%prog 0.1")
 parser.add_option("--logfile",action="store", dest="logfile",default="data_replica.log",
                   help="file for the phedex-like log, default is data_replica.log")
-parser.add_option("--dbs",
-                  action="store_true", dest="useDBS", default=False,
-                  help="Retrieve data distribution from DBS")
+parser.add_option("--discovery",
+                  action="store_true", dest="usePDS", default=False,
+                  help="Retrieve data distribution from PhEDEx Data Service")
 parser.add_option("--from_site",
                   action="store", dest="FROM_SITE", default="",
                   help="Source site, eg: T2_CH_CSCS. If LOCAL is indicated, the file list must be a list of global paths")
@@ -92,6 +94,11 @@ parser.add_option("--debug",
                   action="store_true", dest="DEBUG", default=False,
                   help="Verbose mode")
 
+parser.add_option("--copy-tool",
+                  action="store", dest="TOOL", default="lcg-cp",
+                  help="Selects the copy tool to be used (lcg-cp or srmcp). By default lcg-cp is used")
+
+
 (options, args) = parser.parse_args()
 
 if len(args)<1:
@@ -109,11 +116,11 @@ if len(args)<1:
     print "dest_dir must be a complete PFN, eg file:///home/user/"
     exit(1)
 
-if options.useDBS and options.FROM_SITE!="":
+if options.usePDS and options.FROM_SITE!="":
     print "You can either query DBS for sites or choose one yourself, not both"
     exit(1)
 
-if not options.useDBS and options.FROM_SITE=="":
+if not options.usePDS and options.FROM_SITE=="":
     print "You can either query DBS for sites or choose one yourself, but at least one..."
     exit(1)
 
@@ -126,7 +133,7 @@ if options.TO_SITE != "" and DESTINATION=="":
 if options.TO_SITE == "" and DESTINATION=="":
     print "You need to specify at least --to_site or dest_dir"    
 
-if options.RECREATE_SUBDIRS and DESTINATION=="" and  options.useDBS:
+if options.RECREATE_SUBDIRS and DESTINATION=="" and  options.usePDS:
     print "If you want to create a exact replica, you do not need --recreate_subdirs. Otherwise, you need to specify a dest_dir"
     exit(1)
 
@@ -269,7 +276,7 @@ def createSubdir(lfn, DESTINATION):
     return pfn_DESTINATION
 
 ###
-def copyFile(source, dest, srm_prot, myLog, logfile):
+def copyFile(tool,source, dest, srm_prot, myLog, logfile):
 
     myLog["from"] = source["node"]
     myLog["to"] = options.TO_SITE
@@ -283,7 +290,11 @@ def copyFile(source, dest, srm_prot, myLog, logfile):
 
     SUCCESS = -1
     error_log = ""
-    command = "unset SRM_PATH && srmcp "+srm_prot+" "+SRM_OPTIONS+" "+source["pfn"]+" "+dest+ " 2>&1"
+    command = "unset SRM_PATH"
+    if tool=="srmcp":
+        command += "&& srmcp "+srm_prot+" "+SRM_OPTIONS+" "+source["pfn"]+" "+dest+ " 2>&1"
+    else:
+        command += "&& lcg-cp -V cms  -T "+PROTOCOL+" -U "+PROTOCOL+" "+source["pfn"]+" "+dest+ " 2>&1"
     printDebug( command )
 
     if not options.DRYRUN:
@@ -433,7 +444,7 @@ for lfn in list:
         SUCCESS = 1
         counter +=1
         print "\n### Copy process of file "+str(counter)+"/"+str(total_files)+": "+ lfn
-        print "\t Use DBS: "+str(options.useDBS)
+        print "\t Use PhEDEx Data Service: "+str(options.usePDS)
         print "\t From site: "+str(options.FROM_SITE)
         print "\t To site: "+str(options.TO_SITE)
 
@@ -446,7 +457,7 @@ for lfn in list:
 
         myLog["lfn"] = lfn
 
-        if options.useDBS:
+        if options.usePDS:
             retrieve_siteAndPfn(lfn,filelist)
 
         if DESTINATION != "":
@@ -454,6 +465,8 @@ for lfn in list:
         else:
             print "Recreating the whole tree to "+options.TO_SITE
 
+
+        ### creating the destination PFN
         filename = lfn.split("/")[-1]
         if options.TO_SITE!="":
             new_DESTINATION = ""
@@ -478,12 +491,13 @@ for lfn in list:
                 pfn_DESTINATION = createSubdir(lfn, DESTINATION)
             else:
                 pfn_DESTINATION = DESTINATION+filename 
+
             
         srm_prot = ""
         if PROTOCOL == "srmv2":
             srm_prot = "-2"
 
-        if options.useDBS:
+        if options.usePDS:
             sources_list = arrange_sources(filelist[lfn],PREFERRED_SITES )
             if sources_list == []:
                 print "ERROR: no replicas found"
@@ -492,7 +506,7 @@ for lfn in list:
 
             for entry in sources_list:
                 logTransferHeader(entry, pfn_DESTINATION)
-                SUCCESS, error_log = copyFile(entry, pfn_DESTINATION, srm_prot, myLog,options.logfile)
+                SUCCESS, error_log = copyFile(options.TOOL, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile)
                 if SUCCESS == 0:
                     break
                 
@@ -519,37 +533,9 @@ for lfn in list:
                     continue
                 source["size"] = str(os.path.getsize(lfn))
                 
-            filename = lfn.split("/")[-1]
 
-            if options.TO_SITE!="":
-                if options.RECREATE_SUBDIRS:
-                    subdir = ""
-                    for dir in lfn.split("/")[:-1]:
-                        subdir += dir+"/"
-
-                    dir = ""
-                    for i in DESTINATION.split("/")[:-1]:
-                        print i
-                        dir += i+"/"
-                    
-                    pfn_DESTINATION = dir+subdir
-                    pfn_DESTINATION += filename
-                    pfn_DESTINATION = retrieve_pfn(pfn_DESTINATION,options.TO_SITE)
-                else:
-                    if DESTINATION == "":
-                        pfn_DESTINATION = retrieve_pfn(lfn,options.TO_SITE)
-                    else:
-                        pfn_DESTINATION = retrieve_pfn(DESTINATION+filename,options.TO_SITE)
-
-            else:
-                if options.RECREATE_SUBDIRS:
-                    pfn_DESTINATION = createSubdir(lfn, DESTINATION)
-                else:
-                    pfn_DESTINATION = DESTINATION+filename
-
-                    
             logTransferHeader(source,pfn_DESTINATION)
-            SUCCESS, error_log = copyFile(source, pfn_DESTINATION, srm_prot, myLog, options.logfile)
+            SUCCESS, error_log = copyFile(options.TOOL, source, pfn_DESTINATION, srm_prot, myLog, options.logfile)
 
         if SUCCESS != 0:
             writeLog(FAILED_LOGFILE,lfn+"\n")
