@@ -4,20 +4,15 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.8 2009/12/21 11:00:35 leo Exp $
+# $Id: data_replica.py,v 1.9 2009/12/21 18:41:46 leo Exp $
 #################################################################
 
 
-# fixed bug: no site list if no TO_SITE defined
-# modified logfiles names
-# inserted local staging for CASTOR from lxplus:
-#   - enabled by option --castor-stage
-#   - external loop for stager_get
-#   - single rfcp to $TMPDIR (/tmp if TMPDIR not set)
-#   - lcg-cp from local file
-#   - deletion of local file
-#   - checks: works only if launched from lxplus and --from_site=T2_CH_CAF
-
+# preferred sites now accepts also parts of site names, eg T2
+#fixed bug in local cache cleaning (called even when caching mec not enabled)
+# small change to transfer header printout
+# modified options, from --my_option to --my-option, for coherence
+# fixed bug in computation of total files
 
 import os
 from os import popen, path, environ
@@ -26,9 +21,13 @@ from optparse import OptionParser
 from time import time
 
 
-PREFERRED_SITES = [""]
+PREFERRED_SITES = ["T2"]
 DENIED_SITES = ["CAF"]
 PROTOCOL = "srmv2"
+
+LCG_OPTIONS = "--srm-timeout=6000 "
+LCG_OPTIONS+= "-n 1 "
+LCG_OPTIONS+= "--connect-timeout=6000 "
 
 SRM_OPTIONS = "-streams_num=1 "
 #SRM_OPTIONS += "-cksm_type=negotiate "
@@ -77,6 +76,10 @@ usage = """usage: %prog [options] list_file_to_be_transferred [dest_dir]
 
   data_replica.py --from_site=LOCAL --to_site T3_CH_PSI local.list /store/user/leo/test1
 
+  * Copying files from CASTOR@CERN. This method works only from a lxplus machine, and takes profit from a
+  temporary copy from CASTOR to $TMPDIR> this allows to avoid big waiting times. A prestaging request from
+  CASTOR is done before the copy starts
+
 """
 
 parser = OptionParser(usage = usage, version="%prog 0.1")
@@ -85,13 +88,13 @@ parser.add_option("--logfile",action="store", dest="logfile",default="data_repli
 parser.add_option("--discovery",
                   action="store_true", dest="usePDS", default=False,
                   help="Retrieve data distribution from PhEDEx Data Service")
-parser.add_option("--from_site",
+parser.add_option("--from-site",
                   action="store", dest="FROM_SITE", default="",
                   help="Source site, eg: T2_CH_CSCS. If LOCAL is indicated, the file list must be a list of global paths")
-parser.add_option("--to_site",
+parser.add_option("--to-site",
                   action="store", dest="TO_SITE", default="",
                   help="Destination file, eg: T2_CH_CSCS")
-parser.add_option("--recreate_subdirs",
+parser.add_option("--recreate-subdirs",
                   action="store_true", dest="RECREATE_SUBDIRS", default=False,
                   help="Recreate the full subdir tree")
 
@@ -257,6 +260,7 @@ def retrieve_siteAndPfn(lfn,filelist):
 ### arrange sources, putting preferred ones before
 def arrange_sources(sitelist,PREFERRED_SITES ):
     new_sitelist = []
+    notPref_sitelist = []
     for entry in sitelist:
         allowed = True
         for dSite in DENIED_SITES:
@@ -265,14 +269,16 @@ def arrange_sources(sitelist,PREFERRED_SITES ):
                 break
         if not allowed:
             continue
+
+        preferred=False
         for pSite in PREFERRED_SITES:
-            if entry["node"] == pSite:
+            if entry["node"].find(pSite)!=-1:
                 new_sitelist.append(entry)
+                preferred = True
+        if preferred: continue    
+        notPref_sitelist.append(entry)
 
-        if not entry["node"] in  PREFERRED_SITES:
-            new_sitelist.append(entry)
-
-    sitelist= new_sitelist
+    new_sitelist.append(notPref_sitelist)
     return new_sitelist
 
 
@@ -355,7 +361,7 @@ def copyFile(tool,source, dest, srm_prot, myLog, logfile, isStage):
     if tool=="srmcp":
         command += "&& srmcp "+srm_prot+" "+SRM_OPTIONS+" "+source["pfn"]+" "+dest+ " 2>&1"
     else:
-        command += "&& lcg-cp -V cms  -T "+PROTOCOL+" -U "+PROTOCOL+" "+source["pfn"]+" "+dest+ " 2>&1"
+        command += "&& lcg-cp -V cms "+LCG_OPTIONS+" -T "+PROTOCOL+" -U "+PROTOCOL+" "+source["pfn"]+" "+dest+ " 2>&1"
     printDebug( command )
 
     if not options.DRYRUN: 
@@ -395,8 +401,9 @@ def copyFile(tool,source, dest, srm_prot, myLog, logfile, isStage):
     print "\t\t Success: "+str(SUCCESS)
     print "\t\t Error: ",parseErrorLog(error_log)
 
-    pipe = os.popen("rm "+local_pfn)
-    printDebug("CastorStaging: deleted "+local_pfn)
+    if isStage:
+        pipe = os.popen("rm "+local_pfn)
+        printDebug("CastorStaging: deleted "+local_pfn)
     printDebug("Full Error: "+error_log)
     printDebug("sleeping")
     os.popen("sleep 10")
@@ -500,12 +507,18 @@ os.popen("sleep 5")
 printDebug("phedex-like logfile: "+ options.logfile)
 
 filelist = {}
-pipe = popen("cat "+args[0]+" | wc -l")
-total_files = str(pipe.readlines()[0]).strip("\n")
-pipe.close()
+#pipe = popen("cat "+args[0]+" | wc -l")
+#total_files = str(pipe.readlines()[0]).strip("\n")
+#pipe.close()
+
+
 
 counter = 0
 list = open(args[0])
+total_files=0
+for x in list.readlines():
+    if x!='\n': total_files += 1
+list.seek(0)
 
 ### CASTOR staging to disk, prestaging
 if options.CASTORSTAGE:
@@ -527,8 +540,8 @@ for lfn in list.readlines():
         SUCCESS = 1
         counter +=1
         print "\n### Copy process of file "+str(counter)+"/"+str(total_files)+": "+ lfn
-        print "\t Use PhEDEx Data Service: "+str(options.usePDS)
-        print "\t From site: "+str(options.FROM_SITE)
+        print "\t Using PhEDEx Data Service for Discovery: "+str(options.usePDS)
+        #print "\t From site: "+str(options.FROM_SITE)
         print "\t To site: "+str(options.TO_SITE)
 
 
