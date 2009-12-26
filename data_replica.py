@@ -4,15 +4,15 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.9 2009/12/21 18:41:46 leo Exp $
+# $Id: data_replica.py,v 1.10 2009/12/22 22:04:11 leo Exp $
 #################################################################
 
 
-# preferred sites now accepts also parts of site names, eg T2
-#fixed bug in local cache cleaning (called even when caching mec not enabled)
-# small change to transfer header printout
-# modified options, from --my_option to --my-option, for coherence
-# fixed bug in computation of total files
+# moved stats and logs to castorStage
+# fix in --castor-stage check: to-site -> from-site
+# two kinds of options for lcg-cp
+# check on existance of the file list
+# introduced printOutput function for identated output (first version)
 
 import os
 from os import popen, path, environ
@@ -25,9 +25,17 @@ PREFERRED_SITES = ["T2"]
 DENIED_SITES = ["CAF"]
 PROTOCOL = "srmv2"
 
-LCG_OPTIONS = "--srm-timeout=6000 "
+
+###for lcg-utils>=1.7
+#LCG_OPTIONS = "--srm-timeout=6000 "
+#LCG_OPTIONS+= "-n 1 "
+#LCG_OPTIONS+= "--connect-timeout=6000 "
+
+###for lcg-utisl <1.7
+LCG_OPTIONS = "--timeout=6000 "
 LCG_OPTIONS+= "-n 1 "
-LCG_OPTIONS+= "--connect-timeout=6000 "
+
+
 
 SRM_OPTIONS = "-streams_num=1 "
 #SRM_OPTIONS += "-cksm_type=negotiate "
@@ -82,7 +90,7 @@ usage = """usage: %prog [options] list_file_to_be_transferred [dest_dir]
 
 """
 
-parser = OptionParser(usage = usage, version="%prog 0.1")
+parser = OptionParser(usage = usage, version="%prog 1.0")
 parser.add_option("--logfile",action="store", dest="logfile",default="data_replica.log",
                   help="file for the phedex-like log, default is data_replica.log")
 parser.add_option("--discovery",
@@ -153,8 +161,8 @@ if options.RECREATE_SUBDIRS and DESTINATION=="" and  options.usePDS:
     exit(1)
 
 if options.CASTORSTAGE:
-    if os.environ["HOSTNAME"].find("lxplus")==-1 or options.TO_SITE!="T2_CH_CAF":
-        print "--castor-stage option works only from a lxplus machine and setting --to_site=T2_CH_CAF"
+    if os.environ["HOSTNAME"].find("lxplus")==-1 or (options.FROM_SITE!="T2_CH_CAF" and options.FROM_SITE!="CERN_CASTOR_USER" ):
+        print "--castor-stage option works only from a lxplus machine and setting --from_site=T2_CH_CAF or CERN_CASTOR_USER"
         exit(1)
 
 splittedLogfile = options.logfile.split(".")
@@ -166,14 +174,6 @@ NOREPLICA_LOGFILE =splittedLogfile[-2]+"_noReplica.log"
 
 
 
-############CHECK ON MISSING LFN,PROB WHEN NOT IN DBS!!!
-###########
-############ from local to SE?
-##########
-############ final statistics
-##########
-############ if no PFN?
-
 def writeLog(logname,message):
     success_f = open(logname,"a")
     success_f.write(message)
@@ -184,6 +184,13 @@ def writeLog(logname,message):
 def printDebug(string):
     if options.DEBUG:
         print "[DEBUG]: "+string
+
+
+def printOutput(string, level=0):
+    out = ""
+    for i in range(level): out +="\t"
+    out += " "+string
+    print out
 
 
 ###given a lfn and an array, retrieves and stores in the array a dictionary like {"node", node_name}
@@ -202,7 +209,7 @@ def retrieve_siteList(lfn,entry):
         while init!=-1:
             init += len(" node='")
             site = x[init:][:x[init:].find("'")]
-            ###this exclude the destination site from the list
+            ##this exclude the destination site from the list
             if options.TO_SITE!="" and site.find(options.TO_SITE)!=-1: continue
             
             if site.find("MSS")==-1:
@@ -305,15 +312,36 @@ def createSubdir(lfn, DESTINATION):
 
 ###
 
-def castorStage(castor_pfn, tmp):
+def castorStage(castor_pfn, myLog,logfile, tabLevel=2):
+    if not os.environ["TMPDIR"]: ##not sure about it
+        tmp = "/tmp/"
+    else:
+        tmp = os.environ["TMPDIR"]
     if tmp[-1]!= "/": tmp += "/"
     
     command = "rfcp "+castor_pfn+" "+tmp
     pipe = os.popen(command)
     exit_status = pipe.close()
+    
     filename = castor_pfn.split("/")[-1]
+    
+    if exit_status == None:
+        exit_status = 0
 
-    return tmp+filename, exit_status
+    local_pfn = tmp+filename
+    printDebug("CastorStaging: result "+str(local_pfn)+" "+str(exit_status))
+    myLog["local-pfn"] = local_pfn
+    printOutput( "Castor PFN: "+castor_pfn,tabLevel)
+    printOutput( "Local PFN: "+ local_pfn, tabLevel)
+    if exit_status != 0:
+        myLog["t-done"] = time()
+        myLog["report-code"] = exit_status
+        stageError = "Castor error "+str(exit_status)+" on file "+castor_pfn
+        myLog["detail"] = "" 
+        writePhedexLog(myLog,logfile)
+        printOutput( "Error: "+stageError,tabLevel)
+
+    return local_pfn, exit_status
 
 
 
@@ -334,26 +362,9 @@ def copyFile(tool,source, dest, srm_prot, myLog, logfile, isStage):
     SUCCESS = -1
     
     if isStage:
-        castor_pfn = source["pfn"].split("=")[1]
-        printDebug("CastorStaging: from "+castor_pfn)
-        if not os.environ["TMPDIR"]: ##not sure about it
-            tmp = "/tmp/"
-        else:
-            tmp = os.environ["TMPDIR"]
-        printDebug("CastorStaging: to "+tmp)
-        local_pfn, stageExit =  castorStage(castor_pfn, tmp)
-        if stageExit == None:
-            stageExit = 0
-        printDebug("CastorStaging: result "+str(local_pfn)+" "+str(stageExit))
-        myLog["local-pfn"] = local_pfn
-        print "\t\t Local PFN: "+ local_pfn
-        if stageExit != 0:
-            myLog["t-done"] = time()
-            myLog["report-code"] = stageExit
-            stageError = "Castor error "+stageExit+" on file "+castor_pfn
-            myLog["detail"] = "" 
-            writePhedexLog(myLog,logfile)
-            print "\t\t Error: "+stageError
+        castor_pfn = source["pfn"].split("=")[-1]
+        printDebug(castor_pfn)
+        local_pfn, stageExit =  castorStage(castor_pfn, myLog,logfile)
         source["pfn"] = "file:///"+local_pfn
     
     error_log = ""
@@ -503,22 +514,21 @@ from PSI/ETHZ with love
 print "Preferred Sites: ",PREFERRED_SITES
 print "Denied Sites: ", DENIED_SITES
 
-os.popen("sleep 5")
 printDebug("phedex-like logfile: "+ options.logfile)
 
 filelist = {}
-#pipe = popen("cat "+args[0]+" | wc -l")
-#total_files = str(pipe.readlines()[0]).strip("\n")
-#pipe.close()
-
-
-
 counter = 0
+
+if not os.path.isfile(args[0]):
+    print "[ERROR] List file is not a file!"
+    exit(1)
+    
 list = open(args[0])
 total_files=0
 for x in list.readlines():
     if x!='\n': total_files += 1
 list.seek(0)
+os.popen("sleep 5")
 
 ### CASTOR staging to disk, prestaging
 if options.CASTORSTAGE:
@@ -540,9 +550,8 @@ for lfn in list.readlines():
         SUCCESS = 1
         counter +=1
         print "\n### Copy process of file "+str(counter)+"/"+str(total_files)+": "+ lfn
-        print "\t Using PhEDEx Data Service for Discovery: "+str(options.usePDS)
-        #print "\t From site: "+str(options.FROM_SITE)
-        print "\t To site: "+str(options.TO_SITE)
+        printOutput( "Using PhEDEx Data Service for Discovery: "+str(options.usePDS),1 )
+        printOutput("To site: "+str(options.TO_SITE),1)
 
 
         myLog = {"task":"1","file":"1","from":"","to":"",
@@ -559,7 +568,7 @@ for lfn in list.readlines():
         if DESTINATION != "":
              if DESTINATION[-1] != "/": DESTINATION+="/"
         else:
-            print "Recreating the whole tree to "+options.TO_SITE
+            printOtput( "Recreating the whole tree to "+options.TO_SITE,1)
 
 
         ### creating the destination PFN
@@ -571,7 +580,6 @@ for lfn in list.readlines():
                 for subdir in lfn.split("/")[:-1]:
                     lfn_dir += subdir+"/"
                 new_DESTINATION = DESTINATION+lfn_dir
-                #new_DESTINATION += filename
             else:
                 new_DESTINATION = DESTINATION
             
@@ -587,16 +595,29 @@ for lfn in list.readlines():
                 pfn_DESTINATION = createSubdir(lfn, DESTINATION)
             else:
                 pfn_DESTINATION = DESTINATION+filename 
-
-
-
               
             
         srm_prot = ""
         if PROTOCOL == "srmv2":
             srm_prot = "-2"
 
-        if options.usePDS:
+
+        ###Special case for user dir on castor
+        ### file list is supposed to be in the form /castor/ (PFN)
+        if options.FROM_SITE=='CERN_CASTOR_USER':
+            local_pfn, exitStatus = castorStage(lfn,  myLog, options.logfile,1)
+            if exitStatus !=0 :
+                continue
+            entry = {"pfn":"file:///"+local_pfn,"node":options.FROM_SITE}
+            entry["size"] = popen("rfdir "+lfn+" | awk '{print $5}'").readlines()[0].strip("\n")
+            logTransferHeader(entry, pfn_DESTINATION)
+                        
+            SUCCESS, error_log = copyFile(options.TOOL, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, False)
+            pipe = os.popen("rm "+local_pfn)
+            printDebug("CastorStaging: deleted "+local_pfn)
+                            
+
+        elif options.usePDS:
             sources_list = arrange_sources(filelist[lfn],PREFERRED_SITES )
             if sources_list == []:
                 print "ERROR: no replicas found"
