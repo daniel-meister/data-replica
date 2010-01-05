@@ -4,14 +4,16 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: crab_getJobStatistics.py,v 1.7 2009/12/14 16:42:44 leo Exp $
+# $Id: crab_getJobStatistics.py,v 1.8 2009/12/16 14:50:03 leo Exp $
 #################################################################
 
 
 #
 # put options for xml/log file names
 #
-#
+# where is exit code in CMSSW xmls???
+# always the same record for TimeEvent
+
 
 
 import xml.dom.minidom
@@ -54,7 +56,7 @@ else:
     OUTFILE = ""
 
 
-
+acceptedSummaries = ['StorageTiming', "CrabTiming", "Timing"]
 
 
 
@@ -70,12 +72,18 @@ def parseXML_Crab(myXML, mapping):
     doc = xml.dom.minidom.parse(XML_file)
 
     for node in doc.getElementsByTagName("Metric"):
+        if not node.parentNode.attributes["Metric"].value in acceptedSummaries: continue
         if node.attributes["Name"].value=="CpuTime":
             cpuTime =  node.attributes["Value"].value.replace('"','').split(" ")
-            mapping["UserTime"] = cpuTime[0]
-            mapping["SysTime"] = cpuTime[1]
-            mapping["CpuPercentage"] = cpuTime[2].strip("%")
-        mapping[node.attributes["Name"].value] = node.attributes["Value"].value 
+            mapping["UserTime"] = float(cpuTime[0])
+            mapping["SysTime"] = float(cpuTime[1])
+            mapping["CpuPercentage"] = float(cpuTime[2].strip("%"))
+        else:
+            try:
+                value = float(node.attributes["Value"].value)
+            except:
+                value = node.attributes["Value"].value 
+            mapping[node.attributes["Name"].value] = value #float(node.attributes["Value"].value )
         
     for node in doc.getElementsByTagName("FrameworkError"):
         mapping[node.attributes["Type"].value] = node.attributes["ExitStatus"].value
@@ -116,6 +124,39 @@ def parseXML_CMSSW(myXML, mapping):
     return mapping
 
 
+
+
+def getTimingStats(logfile, mapping):
+    pipe = os.popen("grep -E 'TimeEvent|Begin processing the' "+logfile)
+    pipe
+    record = -1
+    mapping["TimeEvent_record"] = []
+    mapping["TimeEvent_event"] = []
+    mapping["TimeEvent_secs"] = []
+    mapping["TimeEvent_cpuSecs"] = []
+    mapping["TimeEvent_cpuPercentage"] = []
+
+    for x in pipe:
+        find1 =  x.find("Begin processing the")
+        find2 = x.find("TimeEvent> ")
+        if find1 !=-1 :
+            record = float( x[len("Begin processing the"): x.find("record")-3]) ##-3 is to cut away st,nd, rd,th
+        elif find2 != -1: 
+            mapping["TimeEvent_record"].append(record)
+            data = x[len("TimeEvent> "):].split(" ")
+            mapping["TimeEvent_event"].append(float(data[0]))
+            
+            mapping["TimeEvent_secs"].append(float( data[2]))
+            mapping["TimeEvent_cpuSecs"].append(float(data[3]))
+            mapping["TimeEvent_cpuPercentage"].append(100*float(data[3])/float(data[2]) )
+            
+
+    #print mapping        
+
+    
+
+
+
 def parseCrab_stdOut(log_file,crab_stdout):
     out =  os.popen("grep ExitCode "+log_file)
     crab_stdout["Success"] = False
@@ -149,6 +190,7 @@ def parseDir_Crab(logdir, subdir, totalFiles):
         totalFiles += 1
 
         if job_output["Success"]:
+            getTimingStats(log_file, job_output)
 
             xml_file = logdir+"crab_fjr_"+str(lognum)+".xml"
             if not os.path.isfile( xml_file ):
@@ -209,18 +251,22 @@ def setBinEdges(job_output, label):
         binEdges['lowerBin'] = 0.0
         binEdges['upperBin'] = 100.
         binEdges['bins'] = 100 
-    elif label.find("Time") != -1:
+    elif label.find("Time") != -1 and label.find("TimeEvent")==-1:
         binEdges['lowerBin'] = 0.0
         binEdges['upperBin'] = 40000. ### 40k secs=11h
         binEdges['bins'] = 4000 ### 10 secs bin 
-    elif label.find("num-operations") != -1:
+    elif label.find("num") != -1:
         binEdges['lowerBin'] = 0.0
-        binEdges['upperBin'] = 100000. 
-        binEdges['bins'] = 10000 
+        binEdges['upperBin'] = 1000000. 
+        binEdges['bins'] = 100000 
     elif label.find("Error") != -1:
         binEdges['lowerBin'] = 0.0
         binEdges['upperBin'] = 1. 
-        binEdges['bins'] = 1    
+        binEdges['bins'] = 1   
+    elif label.find("TimeEvent") != -1:
+        binEdges['lowerBin'] = 0.0
+        binEdges['upperBin'] = 1. 
+        binEdges['bins'] = 1 
     else:
         binEdges['lowerBin'] = 0
         binEdges['upperBin'] = 10000
@@ -288,19 +334,21 @@ def getJobStatistics(LOGDIR,OUTFILE):
         ###UserQuantities
         totalMB = 0
         totalReadTime = 0
-        for quant in job_output.keys():
-            if len(quant.split('-'))==4 and quant.find('readv-total-megabytes')!=-1:
-                totalMB += float(job_output[quant])
-            if len(quant.split('-'))==4 and quant.find('readv-total-msecs')!=-1:
-                totalReadTime += float(job_output[quant])
+        #for quant in job_output.keys():
+        #    if len(quant.split('-'))==4 and quant.find('readv-total-megabytes')!=-1:
+        #        print quant
+        #        totalMB += float(job_output[quant])
+        #    if len(quant.split('-'))==4 and quant.find('readv-total-msecs')!=-1:
+        #        totalReadTime += float(job_output[quant])
 
-        if job_output.has_key('tstoragefile-read-total-megabytes'):
-            totalMB += float(job_output['tstoragefile-read-total-megabytes'])
-            job_output['User_ReadkBEvt'] = 1024*totalMB/float(spName['EventsJob'])
+        if job_output.has_key('tstoragefile-read-total-megabytes'): totalMB += float(job_output['tstoragefile-read-total-megabytes'])
+        if job_output.has_key('tstoragefile-readv-total-megabytes'): totalMB += float(job_output['tstoragefile-readv-total-megabytes'])
+
+        job_output['User_ReadkBEvt'] = 1024*totalMB/float(spName['EventsJob'])
         
-        if job_output.has_key('tstoragefile-read-total-msecs'):
-            totalReadTime += float(job_output['tstoragefile-read-total-msecs'])
-            job_output['User_Wall-Read_CpuPercentage'] = 100.*( float(job_output['ExeTime']) - totalReadTime/1000.)/float(job_output['ExeTime'])
+        #if job_output.has_key('tstoragefile-read-total-msecs'):
+        #    totalReadTime += float(job_output['tstoragefile-read-total-msecs'])
+        #    job_output['User_Wall-Read_CpuPercentage'] = 100.*( float(job_output['ExeTime']) - totalReadTime/1000.)/float(job_output['ExeTime'])
 
 
         totalFiles+=1
@@ -308,22 +356,49 @@ def getJobStatistics(LOGDIR,OUTFILE):
 
         #begin label cycle
         for label in job_output.keys():
+            #print label
             ### checks for float values
-            try: 
-                float( job_output[label])
-                if not label in LABELS: LABELS.append(label)
-            except: 
-                continue
+            
+            #if label.find("TimeEvent")==-1: 
+            #    try: 
+            #        float( job_output[label])
+            #        if not label in LABELS: LABELS.append(label)
+            #    except: 
+            #        continue
 
+            #SINGLE_DIR_DATA[label] = job_output[label]
+            #if label =="CpuPercentage": print  SINGLE_DIR_DATA["CpuPercentage"]
             #begin job output if
-            if job_output.has_key(label):
+                #if job_output.has_key(label):
+                #if not SINGLE_DIR_DATA.has_key(label): SINGLE_DIR_DATA[label] = []
+                #SINGLE_DIR_DATA[label].append(float(job_output[label]))
+                
+            if isinstance( job_output[label] , float):
                 if not SINGLE_DIR_DATA.has_key(label): SINGLE_DIR_DATA[label] = []
-                SINGLE_DIR_DATA[label].append(float(job_output[label]))
+                SINGLE_DIR_DATA[label].append( job_output[label] )
+            elif  isinstance( job_output[label] , int):
+                if not SINGLE_DIR_DATA.has_key(label): SINGLE_DIR_DATA[label] = []
+                SINGLE_DIR_DATA[label].append( float(job_output[label]) )
+            elif  isinstance( job_output[label] , list):
+                if not SINGLE_DIR_DATA.has_key(label): SINGLE_DIR_DATA[label] = []
+                SINGLE_DIR_DATA[label].append( job_output[label])
+            else:
+                continue
+   
+            if not label in LABELS:
+                #print label
+                if not label in ['TimeEvent_record','TimeEvent_run','TimeEvent_event']:
+                    LABELS.append(label)
+            #try: 
+            #    float( job_output[label])
+            #    if not label in LABELS: LABELS.append(label)
+            #except: 
+            #    continue
 
-                if not MEAN_COMP.has_key(label): MEAN_COMP[label] = {"N":0,"X":0,"X2":0}
-                MEAN_COMP[label]["N"]+= 1
-                MEAN_COMP[label]["X"]+= float(job_output[label])
-                MEAN_COMP[label]["X2"]+= float(job_output[label])*float(job_output[label])
+            #if not MEAN_COMP.has_key(label): MEAN_COMP[label] = {"N":0,"X":0,"X2":0}
+            #MEAN_COMP[label]["N"]+= 1
+            #MEAN_COMP[label]["X"]+= float(job_output[label])
+            #MEAN_COMP[label]["X2"]+= float(job_output[label])*float(job_output[label])
 
 #end job output if
 
@@ -332,8 +407,6 @@ def getJobStatistics(LOGDIR,OUTFILE):
         else: SUMMARY["Failures"] +=1
                 
     #end log cycle
-
-
 
     LABELS.sort()
 
@@ -359,6 +432,7 @@ def getJobStatistics(LOGDIR,OUTFILE):
             exit(0)
 
         for label in LABELS:
+            if label.find("TimeEvent")!=-1: continue ##these are plotted separately
             single_H[label] = {}
             binEdges = setBinEdges(job_output,label) 
             single_H[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName, sampleName, binEdges['bins'], binEdges['lowerBin'], binEdges['upperBin'])
@@ -368,14 +442,44 @@ def getJobStatistics(LOGDIR,OUTFILE):
                 print "[WARNING]: "+label+" quantity not available"
                 continue
 
-            for entry in SINGLE_DIR_DATA[label]:
-                #print entry
-                single_H[label].Fill(entry)
+            if isinstance( SINGLE_DIR_DATA[label] , float):
+                single_H[label].Fill( SINGLE_DIR_DATA[label] )
+            else:
+                for entry in SINGLE_DIR_DATA[label]:
+                    single_H[label].Fill( float(entry) )
 
             #if label == "tstoragefile-read-total-msecs":
             nBins = single_H[label].GetNbinsX()
             single_H[label].SetBinContent( nBins , single_H[label].GetBinContent( nBins )+
                                                         single_H[label].GetBinContent( nBins+1 )) 
+        single_Graph = {}
+        for label in ['TimeEvent_secs','TimeEvent_cpuSecs','TimeEvent_cpuPercentage']:
+            #print label
+            if label.find("TimeEvent")==-1: continue
+            if label.find("record")!=-1 or label.find("event")!=-1 : continue
+            #single_H[label] = {}
+            #binEdges = setBinEdges(job_output,label) 
+            #single_H[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName, sampleName, binEdges['bins'], binEdges['lowerBin'], binEdges['upperBin'])
+            #single_H[label].StatOverflows(ROOT.kTRUE)
+            
+            single_Graph[label] = ROOT.TGraph()
+            
+            if not SINGLE_DIR_DATA.has_key(label):
+                print "[WARNING]: "+label+" quantity not available"
+                continue
+            nIter = len( SINGLE_DIR_DATA[label] )
+            i=0
+           
+            while i<nIter: #for entry in SINGLE_DIR_DATA[label]:
+                j = 0
+                while j< len( SINGLE_DIR_DATA[label][i] ):
+                    #print label, SINGLE_DIR_DATA["TimeEvent_record"][i][j], SINGLE_DIR_DATA[label][i][j]
+                    #single_H[label].Fill( str(SINGLE_DIR_DATA["TimeEvent_record"][i][j]), SINGLE_DIR_DATA[label][i][j])
+                    single_Graph[label].SetPoint(j, SINGLE_DIR_DATA["TimeEvent_record"][i][j], SINGLE_DIR_DATA[label][i][j])
+                    j += 1
+                i += 1
+                
+            outFile.WriteTObject( single_Graph[label] ,'QUANT'+label+'-SAMPLE'+sampleName);
 
         outFile.Write()
         outFile.Close()
