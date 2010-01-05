@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.10 2009/12/22 22:04:11 leo Exp $
+# $Id: data_replica.py,v 1.11 2009/12/26 22:01:56 leo Exp $
 #################################################################
 
 
@@ -52,7 +52,7 @@ usage = """usage: %prog [options] list_file_to_be_transferred [dest_dir]
     dest_dir must be a complete PFN, eg file:///home/user/, if none it will be retrieved from the lfn
     information and the destination site
 
-    you must at least declare [dest_dir] or the --to_site option
+    you must at least declare [dest_dir] or the --to-site option
 
     Sites must have a standard name, e.g. T2_CH_CSCS
 
@@ -61,32 +61,39 @@ usage = """usage: %prog [options] list_file_to_be_transferred [dest_dir]
 
   * Replicate a file list without specifying a source node (discovery). In this case, a source nodes list is retrieved from PhEDEx data service: 
 
-      data_replica --discovery filelist.list --to_site YOUR_SITE
+      data_replica --discovery filelist.list --to-site YOUR_SITE
 
   * Replicate a file list using discovery and giving a destination folder:
 
-      data_replica --discovery filelist.list --to_site YOUR_SITE /store/user/leo
+      data_replica --discovery filelist.list --to-site YOUR_SITE /store/user/leo
 
-  * Replicate a file list NOT registered in PhEDEx. In this case, you should specify --from_site.
+  * Replicate a file list NOT registered in PhEDEx. In this case, you should specify --from-site.
 
-      data_replica filelist.list --from_site FROM_SITE --to_site YOUR_SITE
+      data_replica filelist.list --from-site FROM_SITE --to-site YOUR_SITE
 
-  * Replicate a file list NOT registered in PhEDEx, giving a destination folder.Also in this case, you should specify --from_site.
+  * Replicate a file list NOT registered in PhEDEx, giving a destination folder.Also in this case, you should specify --from-site.
 
-      data_replica filelist.list --from_site FROM_SITE --to_site YOUR_SITE /store/user/leo
+      data_replica filelist.list --from-site FROM_SITE --to-site YOUR_SITE /store/user/leo
 
-  * Copying data locally: in this case you don't have to give the --to_site option but you need to give
-  a dest_dir in PFN format. Warning: if you intend to use the --recreate_subdirs option, you need to create yourself the local directory structure:
+  * Copying data locally: in this case you don't have to give the --to-site option but you need to give
+  a dest_dir in PFN format. Warning: if you intend to use the --recreate-subdirs option, you need to create yourself the local directory structure:
 
-      data_replica filelist.list --from_site FROM_SITE  file:///`pwd`/
+      data_replica filelist.list --from-site FROM_SITE  file:///`pwd`/
 
   * Copying data from a local area: the list of files should contain only full paths:
 
-  data_replica.py --from_site=LOCAL --to_site T3_CH_PSI local.list /store/user/leo/test1
+      data_replica.py --from-site LOCAL --to-site T3_CH_PSI local.list /store/user/leo/test1
 
   * Copying files from CASTOR@CERN. This method works only from a lxplus machine, and takes profit from a
-  temporary copy from CASTOR to $TMPDIR> this allows to avoid big waiting times. A prestaging request from
-  CASTOR is done before the copy starts
+  temporary copy from CASTOR to $TMPDIR: this allows to avoid big waiting times. A prestaging request from
+  CASTOR is done before the copy starts:
+
+      data_replica.py --from-site T2_CH_CAF --to-site T3_CH_PSI castorStore.list /store/user/leo/testCastor4 --castor-stage
+
+  * Copying files from user area under CASTOR@CERN. In this case, PFN are not retrievable from PhEDEx data service, so the file list
+  must contain Castor full path (/castor/cern.ch/....) and the source site is CERN_CASTOR_USER. Staging is available: 
+  
+      data_replica.py --from-site CERN_CASTOR_USER --to-site T3_CH_PSI castor.list /store/user/leo/testCastor3 --castor-stage
 
 """
 
