@@ -4,15 +4,12 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.11 2009/12/26 22:01:56 leo Exp $
+# $Id: data_replica.py,v 1.12 2010/01/05 10:17:54 leo Exp $
 #################################################################
 
 
-# moved stats and logs to castorStage
-# fix in --castor-stage check: to-site -> from-site
-# two kinds of options for lcg-cp
-# check on existance of the file list
-# introduced printOutput function for identated output (first version)
+# auto selection for lcg-cp options
+# added reference to -h option to usage
 
 import os
 from os import popen, path, environ
@@ -27,9 +24,9 @@ PROTOCOL = "srmv2"
 
 
 ###for lcg-utils>=1.7
-#LCG_OPTIONS = "--srm-timeout=6000 "
-#LCG_OPTIONS+= "-n 1 "
-#LCG_OPTIONS+= "--connect-timeout=6000 "
+LCG_OPTIONS_17 = "--srm-timeout=6000 "
+LCG_OPTIONS_17+= "-n 1 "
+LCG_OPTIONS_17+= "--connect-timeout=6000 "
 
 ###for lcg-utisl <1.7
 LCG_OPTIONS = "--timeout=6000 "
@@ -94,6 +91,8 @@ usage = """usage: %prog [options] list_file_to_be_transferred [dest_dir]
   must contain Castor full path (/castor/cern.ch/....) and the source site is CERN_CASTOR_USER. Staging is available: 
   
       data_replica.py --from-site CERN_CASTOR_USER --to-site T3_CH_PSI castor.list /store/user/leo/testCastor3 --castor-stage
+
+Use the -h option for more information
 
 """
 
@@ -353,7 +352,7 @@ def castorStage(castor_pfn, myLog,logfile, tabLevel=2):
 
 
 
-def copyFile(tool,source, dest, srm_prot, myLog, logfile, isStage):
+def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage):
 
     printDebug("Starting copyFile")
 
@@ -377,9 +376,9 @@ def copyFile(tool,source, dest, srm_prot, myLog, logfile, isStage):
     error_log = ""
     command = "unset SRM_PATH"
     if tool=="srmcp":
-        command += "&& srmcp "+srm_prot+" "+SRM_OPTIONS+" "+source["pfn"]+" "+dest+ " 2>&1"
+        command += "&& srmcp "+srm_prot+" "+copyOptions+" "+source["pfn"]+" "+dest+ " 2>&1"
     else:
-        command += "&& lcg-cp -V cms "+LCG_OPTIONS+" -T "+PROTOCOL+" -U "+PROTOCOL+" "+source["pfn"]+" "+dest+ " 2>&1"
+        command += "&& lcg-cp -V cms "+copyOptions+" -T "+PROTOCOL+" -U "+PROTOCOL+" "+source["pfn"]+" "+dest+ " 2>&1"
     printDebug( command )
 
     if not options.DRYRUN: 
@@ -537,6 +536,22 @@ for x in list.readlines():
 list.seek(0)
 os.popen("sleep 5")
 
+copyOptions = ""
+### lcg-utils version check
+if options.TOOL=='lcg-cp':
+    pipe = os.popen('lcg-cp --version | grep lcg_util')
+    out = pipe.readlines()[0]
+    pipe.close()
+    splitOut = out.split('-')
+    if len(splitOut)>1:
+        version = splitOut[1].split('.')[0]+'.'+splitOut[1].split('.')[1]+splitOut[1].split('.')[2]
+        version = float(version)
+    if version >= 1.7: copyOptions = LCG_OPTIONS_17
+    else:  copyOptions = LCG_OPTIONS
+elif options.TOOL=='srmcp':
+    copyOptions = SRM_OPTIONS
+
+
 ### CASTOR staging to disk, prestaging
 if options.CASTORSTAGE:
     print "Prestaging files from CASTOR"
@@ -619,7 +634,7 @@ for lfn in list.readlines():
             entry["size"] = popen("rfdir "+lfn+" | awk '{print $5}'").readlines()[0].strip("\n")
             logTransferHeader(entry, pfn_DESTINATION)
                         
-            SUCCESS, error_log = copyFile(options.TOOL, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, False)
+            SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, False)
             pipe = os.popen("rm "+local_pfn)
             printDebug("CastorStaging: deleted "+local_pfn)
                             
@@ -633,7 +648,7 @@ for lfn in list.readlines():
 
             for entry in sources_list:
                 logTransferHeader(entry, pfn_DESTINATION)
-                SUCCESS, error_log = copyFile(options.TOOL, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, options.CASTORSTAGE)
+                SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, options.CASTORSTAGE)
                 if SUCCESS == 0:
                     break
                 
@@ -662,7 +677,7 @@ for lfn in list.readlines():
                 
 
             logTransferHeader(source,pfn_DESTINATION)
-            SUCCESS, error_log = copyFile(options.TOOL, source, pfn_DESTINATION, srm_prot, myLog, options.logfile, options.CASTORSTAGE)
+            SUCCESS, error_log = copyFile(options.TOOL, copyOptions, source, pfn_DESTINATION, srm_prot, myLog, options.logfile, options.CASTORSTAGE)
 
         if SUCCESS != 0:
             writeLog(FAILED_LOGFILE,lfn+"\n")
