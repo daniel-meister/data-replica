@@ -4,11 +4,15 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.13 2010/01/07 11:12:09 leo Exp $
+# $Id: data_replica.py,v 1.14 2010/01/07 16:06:29 leo Exp $
 #################################################################
 
 
-# small fixes in the help
+# moved filelist from structure to simple dict
+# added  getFileSizeLCG(pfn) function
+# inserted file size check
+
+
 
 import os
 from os import popen, path, environ
@@ -17,8 +21,8 @@ from optparse import OptionParser
 from time import time
 
 
-PREFERRED_SITES = ["T2"]
-DENIED_SITES = ["CAF"]
+PREFERRED_SITES = ["PSI","T2"]
+DENIED_SITES = ["CAF","CN"]
 PROTOCOL = "srmv2"
 
 
@@ -200,7 +204,6 @@ def printOutput(string, level=0):
 
 ###given a lfn and an array, retrieves and stores in the array a dictionary like {"node", node_name}
 def retrieve_siteList(lfn,entry):
-    print "calling"
     if len(lfn)<2:
         print "[ERROR] NO VALID LFN!!!"
         return 1
@@ -261,13 +264,17 @@ def retrieve_pfn(lfn,site):
 
 ### given a lfn and an empty dict, fills the dictionary as:
 ### {lfn_value:[{"node":node_value,"pfn":pfn_name}, {"node":node_value,"pfn":pfn_name}, ...], {..} }
-def retrieve_siteAndPfn(lfn,filelist):
+def retrieve_siteAndPfn(lfn):
     entry = []
     retrieve_siteList(lfn,entry)
     for x in entry:
         x["pfn"] =  retrieve_pfn(lfn,x["node"])
-    filelist[lfn]  =entry
+    #filelist[lfn]  =entry
+    return entry
                             
+
+
+
 
 ### arrange sources, putting preferred ones before
 def arrange_sources(sitelist,PREFERRED_SITES ):
@@ -294,13 +301,26 @@ def arrange_sources(sitelist,PREFERRED_SITES ):
     return new_sitelist
 
 
+
+def getFileSizeLCG(pfn):
+    out_pipe = popen("lcg-ls -l "+pfn+" | awk '{print $5}'")
+    out = out_pipe.readlines()
+    out_pipe.close()
+
+    if len(out) == 0:
+        size = -1
+    else:
+        size = out[0].strip("\n")
+    return size
+#source["size"] = out[0].strip("\n")
+
+
+
 ###
 def createSubdir(lfn, DESTINATION):
     pfn_DESTINATION = ""
-    
     filename = lfn.split("/")[-1]
-    print filename
-    
+        
     subdir = ""
     for dir in lfn.split("/")[:-1]:
         subdir += dir+"/"
@@ -314,6 +334,9 @@ def createSubdir(lfn, DESTINATION):
     pfn_DESTINATION += filename
 
     return pfn_DESTINATION
+
+
+
 
 ###
 
@@ -397,21 +420,29 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
         myLog["t-done"] = time()
         myLog["report-code"] = SUCCESS
         myLog["detail"] = error_log
-
-        writePhedexLog(myLog,logfile)
-
     else:
         myLog["t-done"] = time()
 
+    ### checking size
+    if SUCCESS == 0:
+        if dest.find('file:///')!=-1:
+            myLog["dest size"] = os.stat( dest[len('file:///'):]).st_size
+        else:
+            myLog["dest size"] = getFileSizeLCG(dest)
+
+    if  float(myLog["dest size"]) != float(myLog['size']):
+        SUCCESS = -1
+        myLog["report-code"] = SUCCESS
+        myLog["detail"] ='Size mismatch: source='+myLog['size']+" dest="+myLog['dest size']
+        
+    if not options.DRYRUN: writePhedexLog(myLog,logfile)
+        
     if SUCCESS == 0:
         speed = float(myLog["size"])/((1024*1024)*float(float(myLog["t-done"]) - float(myLog["t-xfer"]) ) )
         writeLog(SUCCESS_LOGFILE,myLog["lfn"]+'\n')
     else:
         speed = 0
-        #failed_f = open(FAILED_LOGFILE,"a")
-        #failed_f.write(myLog["lfn"]+'\n')
-        #failed_f.close()
-        
+          
     print "\t\t Elapsed Time: "+str( myLog["t-done"]-myLog["t-assign"] )+ " s"    
     print "\t\t Speed: "+str(speed)+" MB/s"
     print "\t\t Success: "+str(SUCCESS)
@@ -521,7 +552,7 @@ print "Denied Sites: ", DENIED_SITES
 
 printDebug("phedex-like logfile: "+ options.logfile)
 
-filelist = {}
+#filelist = {}
 counter = 0
 
 if not os.path.isfile(args[0]):
@@ -584,13 +615,12 @@ for lfn in list.readlines():
         myLog["lfn"] = lfn
 
         if options.usePDS:
-            retrieve_siteAndPfn(lfn,filelist)
+            filelist = retrieve_siteAndPfn(lfn)
 
         if DESTINATION != "":
              if DESTINATION[-1] != "/": DESTINATION+="/"
         else:
             printOtput( "Recreating the whole tree to "+options.TO_SITE,1)
-
 
         ### creating the destination PFN
         filename = lfn.split("/")[-1]
@@ -639,7 +669,7 @@ for lfn in list.readlines():
                             
 
         elif options.usePDS:
-            sources_list = arrange_sources(filelist[lfn],PREFERRED_SITES )
+            sources_list = arrange_sources(filelist,PREFERRED_SITES )
             if sources_list == []:
                 print "ERROR: no replicas found"
                 writeLog(NOREPLICA_LOGFILE,lfn+"\n")
@@ -657,15 +687,11 @@ for lfn in list.readlines():
             source = {"pfn":pfn,"node":options.FROM_SITE}
 
             if options.FROM_SITE!='LOCAL':
-                out_pipe = popen("lcg-ls -l "+pfn+" | awk '{print $5}'")
-                out = out_pipe.readlines()
-                out_pipe.close()
-
-                if len(out) == 0:
+                source["size"] =  getFileSizeLCG(pfn )#out[0].strip("\n")
+                if source["size"]==-1:
                     print "[ERROR] file does not exist on source"
                     writeLog(NOREPLICA_LOGFILE,myLog["lfn"]+'\n')
                     continue
-                source["size"] = out[0].strip("\n")
             else:
                 ###Using lfn, as in this case is the full path
                 if not os.path.isfile(lfn):
