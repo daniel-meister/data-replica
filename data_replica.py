@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.14 2010/01/07 16:06:29 leo Exp $
+# $Id: data_replica.py,v 1.15 2010/01/11 16:39:25 leo Exp $
 #################################################################
 
 
@@ -21,7 +21,7 @@ from optparse import OptionParser
 from time import time
 
 
-PREFERRED_SITES = ["PSI","T2"]
+PREFERRED_SITES = ["CSCS","T2"]
 DENIED_SITES = ["CAF","CN"]
 PROTOCOL = "srmv2"
 
@@ -178,8 +178,9 @@ splittedLogfile = options.logfile.split(".")
 FAILED_LOGFILE = splittedLogfile[-2]+"_failedList.log"
 SUCCESS_LOGFILE = splittedLogfile[-2]+"_successList.log"
 NOREPLICA_LOGFILE =splittedLogfile[-2]+"_noReplica.log"
-
-#MY_SITE = options.TO_SITE
+USER = os.getenv('LOGNAME')
+DATE = popen("date +'%Y%m%d%k%M'").readlines()[0].strip('\n').replace(" ","0")
+ADMIN_LOGFILE = "/tmp/data_replica-admin-"+USER+"-"+DATE+'.log'
 
 
 
@@ -195,11 +196,13 @@ def printDebug(string):
         print "[DEBUG]: "+string
 
 
-def printOutput(string, level=0):
+def printOutput(string, level=0, logfile=''):
     out = ""
     for i in range(level): out +="\t"
     out += " "+string
     print out
+    if logfile!='':
+        writeLog(logfile, out+'\n')
 
 
 ###given a lfn and an array, retrieves and stores in the array a dictionary like {"node", node_name}
@@ -430,10 +433,10 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
         else:
             myLog["dest size"] = getFileSizeLCG(dest)
 
-    if  float(myLog["dest size"]) != float(myLog['size']):
-        SUCCESS = -1
-        myLog["report-code"] = SUCCESS
-        myLog["detail"] ='Size mismatch: source='+myLog['size']+" dest="+myLog['dest size']
+        if  float(myLog["dest size"]) != float(myLog['size']):
+            SUCCESS = -1
+            myLog["report-code"] = SUCCESS
+            myLog["detail"] ='Size mismatch: source='+myLog['size']+" dest="+myLog['dest size']
         
     if not options.DRYRUN: writePhedexLog(myLog,logfile)
         
@@ -442,11 +445,13 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
         writeLog(SUCCESS_LOGFILE,myLog["lfn"]+'\n')
     else:
         speed = 0
-          
-    print "\t\t Elapsed Time: "+str( myLog["t-done"]-myLog["t-assign"] )+ " s"    
-    print "\t\t Speed: "+str(speed)+" MB/s"
-    print "\t\t Success: "+str(SUCCESS)
-    print "\t\t Error: ",parseErrorLog(error_log)
+
+    out = "\t\t Elapsed Time: "+str( myLog["t-done"]-myLog["t-assign"] )+ " s\n"    
+    out+= "\t\t Speed: "+str(speed)+" MB/s\n"
+    out+= "\t\t Success: "+str(SUCCESS)+'\n'
+    out+= "\t\t Error: "+parseErrorLog(error_log)
+
+    printOutput(out, 0, ADMIN_LOGFILE)
 
     if isStage:
         pipe = os.popen("rm "+local_pfn)
@@ -528,12 +533,14 @@ def writePhedexLog(myLog,logfile):
 
 
 ###
-def logTransferHeader(entry, pfn_DESTINATION):
-    print "\n\t Trial from: "+entry["node"]+"--------------"
-    print "\t\t From-PFN: "+entry["pfn"]
-    print "\t\t To-PFN: "+pfn_DESTINATION
-    print "\t\t Size: "+entry["size"] + " bytes ("+str(float(entry['size'])/(1024*1024))+" MB)"
-
+def logTransferHeader(entry, pfn_DESTINATION, logfile=''):
+    out = "\n\t Trial from: "+entry["node"]+"--------------\n"
+    out += "\t\t From-PFN: "+entry["pfn"]+'\n'
+    out += "\t\t To-PFN: "+pfn_DESTINATION+'\n'
+    out += "\t\t Size: "+entry["size"] + " bytes ("+str(float(entry['size'])/(1024*1024))+" MB)"
+    print out
+    if logfile!='':
+        writeLog(logfile, out+'\n')
 
 
 
@@ -558,11 +565,17 @@ counter = 0
 if not os.path.isfile(args[0]):
     print "[ERROR] List file is not a file!"
     exit(1)
-    
+
+writeLog(ADMIN_LOGFILE,'User: '+USER+'\nDate: '+DATE+'\n')
+writeLog(ADMIN_LOGFILE,'Options: '+str(options)+'\n')
+
+writeLog(ADMIN_LOGFILE,'Filelist:\n')
 list = open(args[0])
 total_files=0
 for x in list.readlines():
-    if x!='\n': total_files += 1
+    if x!='\n':
+        total_files += 1
+        writeLog(ADMIN_LOGFILE,x)
 list.seek(0)
 os.popen("sleep 5")
 
@@ -601,9 +614,10 @@ for lfn in list.readlines():
     if lfn!= "":
         SUCCESS = 1
         counter +=1
-        print "\n### Copy process of file "+str(counter)+"/"+str(total_files)+": "+ lfn
-        printOutput( "Using PhEDEx Data Service for Discovery: "+str(options.usePDS),1 )
-        printOutput("To site: "+str(options.TO_SITE),1)
+        printOutput("\n### Copy process of file "+str(counter)+"/"+str(total_files)+": "+ lfn, 0, ADMIN_LOGFILE )
+
+        printOutput( "Using PhEDEx Data Service for Discovery: "+str(options.usePDS),1, ADMIN_LOGFILE )
+        printOutput("To site: "+str(options.TO_SITE),1, ADMIN_LOGFILE)
 
 
         myLog = {"task":"1","file":"1","from":"","to":"",
@@ -620,7 +634,7 @@ for lfn in list.readlines():
         if DESTINATION != "":
              if DESTINATION[-1] != "/": DESTINATION+="/"
         else:
-            printOtput( "Recreating the whole tree to "+options.TO_SITE,1)
+            printOutput( "Recreating the whole tree to "+options.TO_SITE,1,ADMIN_LOGFILE)
 
         ### creating the destination PFN
         filename = lfn.split("/")[-1]
@@ -661,8 +675,8 @@ for lfn in list.readlines():
                 continue
             entry = {"pfn":"file:///"+local_pfn,"node":options.FROM_SITE}
             entry["size"] = popen("rfdir "+lfn+" | awk '{print $5}'").readlines()[0].strip("\n")
-            logTransferHeader(entry, pfn_DESTINATION)
-                        
+
+            logTransferHeader(entry, pfn_DESTINATION, ADMIN_LOGFILE)                        
             SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, False)
             pipe = os.popen("rm "+local_pfn)
             printDebug("CastorStaging: deleted "+local_pfn)
@@ -671,12 +685,12 @@ for lfn in list.readlines():
         elif options.usePDS:
             sources_list = arrange_sources(filelist,PREFERRED_SITES )
             if sources_list == []:
-                print "ERROR: no replicas found"
+                printOutput( "ERROR: no replicas found",0,ADMIN_LOGFILE)
                 writeLog(NOREPLICA_LOGFILE,lfn+"\n")
                 continue
 
             for entry in sources_list:
-                logTransferHeader(entry, pfn_DESTINATION)
+                logTransferHeader(entry, pfn_DESTINATION, ADMIN_LOGFILE)
                 SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, options.CASTORSTAGE)
                 if SUCCESS == 0:
                     break
@@ -689,19 +703,19 @@ for lfn in list.readlines():
             if options.FROM_SITE!='LOCAL':
                 source["size"] =  getFileSizeLCG(pfn )#out[0].strip("\n")
                 if source["size"]==-1:
-                    print "[ERROR] file does not exist on source"
+                    printOutput( "[ERROR] file does not exist on source", 0, ADMIN_LOGFILE)
                     writeLog(NOREPLICA_LOGFILE,myLog["lfn"]+'\n')
                     continue
             else:
                 ###Using lfn, as in this case is the full path
                 if not os.path.isfile(lfn):
-                    print "[ERROR] file does not exist on source"
+                    printOutput( "[ERROR] file does not exist on source",0,ADMIN_LOGFILE)
                     writeLog(NOREPLICA_LOGFILE,myLog["lfn"]+'\n')
                     continue
                 source["size"] = str(os.path.getsize(lfn))
                 
 
-            logTransferHeader(source,pfn_DESTINATION)
+            logTransferHeader(source,pfn_DESTINATION, ADMIN_LOGFILE)
             SUCCESS, error_log = copyFile(options.TOOL, copyOptions, source, pfn_DESTINATION, srm_prot, myLog, options.logfile, options.CASTORSTAGE)
 
         if SUCCESS != 0:
