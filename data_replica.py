@@ -300,7 +300,8 @@ def arrange_sources(sitelist,PREFERRED_SITES ):
         if preferred: continue    
         notPref_sitelist.append(entry)
 
-    new_sitelist.append(notPref_sitelist)
+    for entry in notPref_sitelist:
+        new_sitelist.append(entry)
     return new_sitelist
 
 
