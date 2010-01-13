@@ -8,10 +8,8 @@
 #################################################################
 
 
-# moved filelist from structure to simple dict
-# added  getFileSizeLCG(pfn) function
-# inserted file size check
-
+# coherency fixes in help messages (option names)
+# if --discovery, if error contains "exist" break the loop over sites
 
 
 import os
@@ -143,17 +141,12 @@ if len(args) == 2:
 else:
     DESTINATION = ""
 
-if len(args)<1:
-    print "USAGE: "+argv[0]+" [options] list_file_to_be_transferred <dest_dir>"
-    print "dest_dir must be a complete PFN, eg file:///home/user/"
-    exit(1)
-
 if options.usePDS and options.FROM_SITE!="":
-    print "You can either query DBS for sites or choose one yourself, not both"
+    print "You can either PhEDEx dataservice query for sites or choose one yourself, not both"
     exit(1)
 
 if not options.usePDS and options.FROM_SITE=="":
-    print "You can either query DBS for sites or choose one yourself, but at least one..."
+    print "You can either query PhEDEx dataservice for sites or choose one yourself, but at least one..."
     exit(1)
 
 if options.TO_SITE == "":
@@ -163,15 +156,15 @@ if options.TO_SITE != "" and DESTINATION=="":
     print "No DESTINATION given, replicating data using lfn2pfn information"
     
 if options.TO_SITE == "" and DESTINATION=="":
-    print "You need to specify at least --to_site or dest_dir"    
+    print "You need to specify at least --to-site or dest_dir"    
 
 if options.RECREATE_SUBDIRS and DESTINATION=="" and  options.usePDS:
-    print "If you want to create a exact replica, you do not need --recreate_subdirs. Otherwise, you need to specify a dest_dir"
+    print "If you want to create a exact replica, you do not need --recreate-subdirs. Otherwise, you need to specify a dest_dir"
     exit(1)
 
 if options.CASTORSTAGE:
     if os.environ["HOSTNAME"].find("lxplus")==-1 or (options.FROM_SITE!="T2_CH_CAF" and options.FROM_SITE!="CERN_CASTOR_USER" ):
-        print "--castor-stage option works only from a lxplus machine and setting --from_site=T2_CH_CAF or CERN_CASTOR_USER"
+        print "--castor-stage option works only from a lxplus machine and setting --from-site=T2_CH_CAF or CERN_CASTOR_USER"
         exit(1)
 
 splittedLogfile = options.logfile.split(".")
@@ -694,6 +687,8 @@ for lfn in list.readlines():
                 logTransferHeader(entry, pfn_DESTINATION, ADMIN_LOGFILE)
                 SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, options.CASTORSTAGE)
                 if SUCCESS == 0:
+                    break
+                elif error_log.find("exist")!=-1:
                     break
                 
 
