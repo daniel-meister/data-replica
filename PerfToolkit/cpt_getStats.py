@@ -4,15 +4,11 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: crab_cfrSamples.py,v 1.7 2009/12/14 16:43:19 leo Exp $
+# $Id: cpt_getStats.py,v 1.1 2010/01/14 14:53:15 leo Exp $
 #################################################################
 
 
-### added autorebinning and the --no-auto-rebin option to disable it
-### inserted doRebin funciot
-### added --binwidth-time option
-### removed getRebin
-### added legendComposition for configuring legend format for compliant rootfile names
+### added save-png option for all the plots
 
 
 
@@ -251,8 +247,8 @@ for quant in toBePlotAlone:
         else:  histos[quant][histo].Draw(drawOpt+" sames")
     legend[quant].Draw()
     if options.savePng:
-        canvas[sel].Update()
-        canvas[sel].SaveAs(LABEL+"-"+sel+".png") 
+        canvas[quant].Update()
+        canvas[quant].SaveAs(LABEL+cName+"-"+quant+".png") 
 
 for sel in toBePlotTogether.keys():
     if quant in summaryPlots: continue
@@ -318,6 +314,10 @@ for quant in graphs.keys():
     if quant.find('ecs')!=-1:  mGraph[quant].GetYaxis().SetRangeUser(0.001,30)
     mGraph[quant].Draw("ap")
     legend[quant].Draw()
+    if options.savePng:
+        graphCanvas[quant].Update()
+        graphCanvas[quant].SaveAs(LABEL+cName+"-"+quant+".png") 
+
 
 #Print grand view
 if not doSummary: popen("sleep 6000000000")
@@ -368,5 +368,9 @@ for c in viewCanvas.keys():
         legend[quant].Draw()
 
     viewTCanvas[c].Draw()
+    if options.savePng:
+        viewTCanvas[c].Update()
+        viewTCanvas[c].SaveAs(LABEL+cName+"-"+c+".png") 
+
 
 popen("sleep 60000")
