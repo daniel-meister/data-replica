@@ -1,0 +1,161 @@
+[CRAB]
+#
+#   This section contains the default values for general parameters.
+#   They can be set also as a command-line option, i.e.
+#
+#   key1 = value1
+#   [SECTION]
+#   key2 = value2
+#
+#   in this section corresponds to
+#
+#   crab.py -key1=value1 -key2=SECTION.value2
+#
+#   in the command line.
+#
+jobtype = cmssw
+
+### Specify the scheduler to be used. 
+### Supported schedulers are : [ edg, glite, condor_g]
+scheduler = glite
+
+### To configure CRAB  as client set the name of the server     
+### (e.g. pi, lnl etc etc ) 
+### CRAB will submit jobs to the server, which will submit and manage for the users        
+#use_server = 0
+#server_name = on
+
+[CMSSW]
+
+### The data you want to access (to be found on DBS) 
+### /primarydataset/datatier/processeddataset
+#datasetpath=/Zee/Summer09-MC_31X_V3_AODSIM-v1/AODSIM
+#datasetpath=none
+### To run CRAB for private events production set datasetPath= None  
+#datasetpath=/Bs2MuMuGamma/CMSSW_1_6_7-CSA07-1203847101/RECO
+#datasetpath=/InclusiveMu5_Pt50/Summer09-MC_31X_V3_SD_Mu9-v1/GEN-SIM-RECO
+#datasetpath=/InclusiveMu5_Pt50/Summer09-MC_31X_V3_AODSIM-v1/AODSIM
+#datasetpath=/InclusiveMu5_Pt50/Summer09-MC_31X_V3-v1/GEN-SIM-RECO
+#datasetpath=/Wenu/Summer09-MC_31X_V3-v1/GEN-SIM-RECO
+#datasetpath=/QCD_Pt80/Summer09-MC_31X_V3_SD_Jet50U-v1/GEN-SIM-RECO
+#datasetpath=/QCD_Pt80/Summer09-MC_31X_V3-v1/GEN-SIM-RECO
+datasetpath=DATASET
+
+### To select a single (list of) run within a single processed dataset define run number (list)  
+### selection can be a comma-separated list of run numbers and run number ranges: 1,2,3-4
+#runselection=1,2,3-4
+
+### To use a local DBS istance specify the related URL here.   
+# dbs_url = http://cmsdoc.cern.ch/cms/test/aprom/DBS/CGIServer/prodquery
+
+### The name of ParameterSet to be used
+#pset=pythia.cfg
+pset=MYCFG.py
+#pset=patLayer1_fromAOD_full_cfg.py
+
+### Splitting parameters:
+### Total number of events to be accessed: -1 means all
+### NOTE: "-1" is not usable if no input
+total_number_of_events=-1
+
+### Number of events to be processed per job
+events_per_job = EVENTS_JOB	
+
+### Number of jobs to be created per task   
+#number_of_jobs = 100
+
+### The output files produced by your application (comma separated list)
+output_file = MYCFG.root
+
+### To run over the parent also set use_parent = True 
+# use_parent =		
+
+### Dataset of PU to import in the local DBS
+#dataset_pu = /pileup/dataset/toimport
+
+[USER]
+
+### If CRAB.server_mode = 1  
+### To set Your e-mail address to be used by the server to notify you 
+#eMail = your_email_address 
+
+### To specify the percentage of finished job in a task, corresponding
+### to when the notification email will be sent to you by the server default is 100%
+#thresholdLevel = 100
+
+### To specify additional files to be put in InputSandBox
+### write the full path  if the files are not in the current directory
+### (wildcard * are allowed): comma separated list
+#additional_input_files = file1, file2, /full/path/file3 
+
+### To use a specific name of UI directory where CRAB will create job to submit (with full path).
+### the default directory will be "crab_0_data_time"
+ui_working_dir = MYDIR/MYSITE-MYCFG-DATASET_REDUCED-EVENTS_JOB-MYVERSION-MYDATE
+
+
+### OUTPUT file management ###
+### To have back the job executable output into UI set return_data= 1
+return_data = 1
+
+### If return_data = 1 ###
+### To specify the UI directory where to store the CMS executable output
+### FULL path is mandatory. Default is  <ui_working_dir>/res will be used.
+#outputdir= /full/path/yourOutDir
+
+### If return_data = 1 ###
+### To specify the UI directory where to store the stderr, stdout and .BrokerInfo of submitted jobs
+### FULL path is mandatory. Default is <ui_working_dir>/res will be used.
+#logdir= /full/path/yourLogDir
+
+### To copy the CMS executable output into a SE (i:e castor) set copy_data = 1
+copy_data = 0
+
+### if copy_data = 1 ###
+### Specify the name of the SE where to copy the CMS executable output.
+#storage_element = srm.cern.ch
+### Specify the SE directory (or the mountpoint) that has to be writable from all
+#storage_path = /castor/cern.ch/user/u/user
+### example for LNL SRM
+storage_element = t3se01.psi.ch
+storage_path = /srm/managerv2?SFN=/pnfs/psi.ch/cms/trivcat/store/user/ 
+user_remote_dir = leo/IO_test
+copyCommand = srmcp 
+### To specify the version of srm client to use.
+#srm_version = 1
+
+### To publish produced output in a local istance of DBS set publish_data = 1
+publish_data=0
+### Specify the dataset name. The full path will be <primarydataset>/<publish_data_name>/USER 
+#publish_data_name = yourDataName
+### Specify the URL of DBS istance where CRAB has to publish the output files  
+#dbs_url_for_publication = http://cmssrv17.fnal.gov:8989/DBS108LOC1/servlet/DBSServlet
+
+### To switch from status print on screen to DB serialization to a file specify here the destination files.
+### CRAB will create it on CRAB_Working_Dir/share
+#xml_report=  
+
+[GRID]
+#
+## RB/WMS management:
+rb = CERN
+
+##  Black and White Lists management:
+## By Storage
+se_black_list = T0,T1
+se_white_list = MYSITE
+
+## By ComputingElement
+#ce_black_list =
+#ce_white_list =
+
+[CONDORG]
+
+# Set this to condor to override the batchsystem defined in gridcat.
+#batchsystem = condor
+
+# Specify addition condor_g requirments
+# use this requirment to run on a cms dedicated hardare
+# globus_rsl = (condor_submit=(requirements 'ClusterName == \"CMS\" && (Arch == \"INTEL\" || Arch == \"X86_64\")'))
+# use this requirement to run on the new hardware
+#globus_rsl = (condor_submit=(requirements 'regexp(\"cms-*\",Machine)'))
+
