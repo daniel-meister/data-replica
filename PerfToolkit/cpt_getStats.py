@@ -4,11 +4,11 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getStats.py,v 1.1 2010/01/14 14:53:15 leo Exp $
+# $Id: cpt_getStats.py,v 1.2 2010/01/14 17:52:48 leo Exp $
 #################################################################
 
 
-### added save-png option for all the plots
+### corrected bug in setting logscales for graphs
 
 
 
@@ -296,8 +296,8 @@ for quant in graphs.keys():
     graphCanvas[quant] = createCanvas(LABEL+cName+"-"+quant) 
     legend[quant] = createLegend()
     mGraph[quant] = ROOT.TMultiGraph()
-    ROOT.gStyle.SetOptLogx()
-    ROOT.gStyle.SetOptLogy()
+    graphCanvas[quant].SetLogx()
+    graphCanvas[quant].SetLogy()
     i=0
     for sample in graphs[quant].keys():
         legend[quant].AddEntry(graphs[quant][sample],legLabel[sample] ,"p" )
