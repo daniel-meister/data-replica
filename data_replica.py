@@ -4,12 +4,18 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.15 2010/01/11 16:39:25 leo Exp $
+# $Id: data_replica.py,v 1.18 2010/01/13 16:16:51 leo Exp $
 #################################################################
 
 
-# coherency fixes in help messages (option names)
-# if --discovery, if error contains "exist" break the loop over sites
+# existance check on srm destination before copy starts (in copyFile )
+# reduced sleep time after a copy to 2 secs to speed up large transfers
+# stderr thrown away from getFileSizeLCG
+# added EXISTING_LOGFILE, containing lfn and pfn of files existing on dest
+# used "File exist" as match for existance error
+# updated help with names of logfiles
+# --recreate-subdirs does not work atm with copy in a local filesystem (or anyway without --to-site set), added options check
+# by default, T0 and MSS into DENIED_SITES
 
 
 import os
@@ -19,8 +25,8 @@ from optparse import OptionParser
 from time import time
 
 
-PREFERRED_SITES = ["CSCS","T2"]
-DENIED_SITES = ["CAF","CN"]
+PREFERRED_SITES = ["T2"]
+DENIED_SITES = ["T0","MSS"]
 PROTOCOL = "srmv2"
 
 
@@ -54,6 +60,15 @@ usage = """usage: %prog [options] filelist.txt [dest_dir]
 
     Sites must have a standard name, e.g. T2_CH_CSCS
 
+    Four log-files can be produced by this script:
+       * <logfile>.log: contains a PhEDEx-style log
+       * <logfile>_existingList.log: contains LFNs and PFNs of files existing on destination (SRM
+         endpoints only)
+       * <logfile>_failedList.log: a list of all the LFNs which failed
+       * <logfile>_successList.log: a list of all the LFNs successfully copied
+       * <logfile>_noReplica.log: a list of files with no replicas found (check DENIED_SITES list in the
+         script header)
+    
     
 [USE CASES]
 
@@ -162,12 +177,19 @@ if options.RECREATE_SUBDIRS and DESTINATION=="" and  options.usePDS:
     print "If you want to create a exact replica, you do not need --recreate-subdirs. Otherwise, you need to specify a dest_dir"
     exit(1)
 
+if options.RECREATE_SUBDIRS and options.TO_SITE=="":
+    print "--recreate-subdirs does not work without setting --to-site, sorry"
+    exit(1)
+    
 if options.CASTORSTAGE:
     if os.environ["HOSTNAME"].find("lxplus")==-1 or (options.FROM_SITE!="T2_CH_CAF" and options.FROM_SITE!="CERN_CASTOR_USER" ):
         print "--castor-stage option works only from a lxplus machine and setting --from-site=T2_CH_CAF or CERN_CASTOR_USER"
         exit(1)
 
+
+### Log files definition
 splittedLogfile = options.logfile.split(".")
+EXISTING_LOGFILE = splittedLogfile[-2]+"_existingList.log"
 FAILED_LOGFILE = splittedLogfile[-2]+"_failedList.log"
 SUCCESS_LOGFILE = splittedLogfile[-2]+"_successList.log"
 NOREPLICA_LOGFILE =splittedLogfile[-2]+"_noReplica.log"
@@ -300,9 +322,10 @@ def arrange_sources(sitelist,PREFERRED_SITES ):
 
 
 def getFileSizeLCG(pfn):
-    out_pipe = popen("lcg-ls -l "+pfn+" | awk '{print $5}'")
+    out_pipe = popen("lcg-ls -l "+pfn+" 2>/dev/null | awk '{print $5}'")
+    #print "lcg-ls -l "+pfn+" 2>/dev/null | awk '{print $5}'"
     out = out_pipe.readlines()
-    out_pipe.close()
+    #out_pipe.close()
 
     if len(out) == 0:
         size = -1
@@ -316,6 +339,7 @@ def getFileSizeLCG(pfn):
 ###
 def createSubdir(lfn, DESTINATION):
     pfn_DESTINATION = ""
+    if lfn.find('file:///')!=-1: filename = lfn[ len('file///'):]
     filename = lfn.split("/")[-1]
         
     subdir = ""
@@ -400,13 +424,20 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
         command += "&& lcg-cp -V cms "+copyOptions+" -T "+PROTOCOL+" -U "+PROTOCOL+" "+source["pfn"]+" "+dest+ " 2>&1"
     printDebug( command )
 
-    if not options.DRYRUN: 
-        pipe = popen(command)
-        out = pipe.readlines()
-        for l in out:
-            error_log += l
-        exit_status = pipe.close()
-
+    if not options.DRYRUN:
+        checkFileExist = -1
+        ### checking file existance only for SRM destinations
+        if dest.find('srm://')!=-1: checkFileExist = getFileSizeLCG(dest)
+        if checkFileExist==-1:
+            pipe = popen(command)
+            out = pipe.readlines()
+            for l in out:
+                error_log += l
+            exit_status = pipe.close()
+        else:
+            exit_status = 1
+            error_log = 'File exists on destination'
+            
         if exit_status == None and len(error_log.strip(" ").strip("\n"))<1: #and (error_log.find("error")==-1 and error_log.find("FAILURE")==-1):
             SUCCESS = 0
         else:
@@ -452,7 +483,7 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
         printDebug("CastorStaging: deleted "+local_pfn)
     printDebug("Full Error: "+error_log)
     printDebug("sleeping")
-    os.popen("sleep 10")
+    os.popen("sleep 2")
     
     return SUCCESS,error_log    
 
@@ -611,7 +642,10 @@ for lfn in list.readlines():
         printOutput("\n### Copy process of file "+str(counter)+"/"+str(total_files)+": "+ lfn, 0, ADMIN_LOGFILE )
 
         printOutput( "Using PhEDEx Data Service for Discovery: "+str(options.usePDS),1, ADMIN_LOGFILE )
-        printOutput("To site: "+str(options.TO_SITE),1, ADMIN_LOGFILE)
+        if str(options.TO_SITE)=="":
+            printOutput("To site: LOCAL",1, ADMIN_LOGFILE)
+        else:
+            printOutput("To site: "+str(options.TO_SITE),1, ADMIN_LOGFILE)
 
 
         myLog = {"task":"1","file":"1","from":"","to":"",
@@ -688,7 +722,7 @@ for lfn in list.readlines():
                 SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, options.CASTORSTAGE)
                 if SUCCESS == 0:
                     break
-                elif error_log.find("exist")!=-1:
+                elif error_log.find("File exist")!=-1:
                     break
                 
 
@@ -716,9 +750,10 @@ for lfn in list.readlines():
 
         if SUCCESS != 0:
             writeLog(FAILED_LOGFILE,lfn+"\n")
-                          
+            if myLog['detail'].find('File exist'):
+                writeLog(EXISTING_LOGFILE,lfn+" "+myLog['to-pfn']+"\n")
 
-#logfile.close()
+
 
 
 
