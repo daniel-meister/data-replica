@@ -4,12 +4,15 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: crab_utilities.py,v 1.2 2009/12/14 16:43:36 leo Exp $
+# $Id: cpt_utilities.py,v 1.1 2010/01/14 14:53:15 leo Exp $
 #################################################################
 
 
 ### new ordering for stats
 ### added legLabels to stats
+### different format for TimeModule and the others
+### added print output for TimeModule Producers, statistics ned to be corrected (TH2 instead of TH1)
+
 
 from sys import argv,exit
 from os import popen
@@ -64,25 +67,20 @@ def setHisto(histo, color, lineStyle,title,Xtitle, rebin):
 
 
 
-def getHistos(listOfKeys, histos, graphs, posFilter, negFilter=""):
-    myColor = 1
-    sitePalette = {}
-#    histos = {}
-    #bins = {}
+def getHistos(listOfKeys, histos, graphs, sitePalette, posFilter, negFilter=""):
     for key in listOfKeys:
         obj = key.ReadObj();
-        if obj.IsA().InheritsFrom("TH1") or obj.IsA().InheritsFrom("TGraph"):
+        if obj.IsA().InheritsFrom("TH1") or obj.IsA().InheritsFrom("TGraph") or obj.IsA().InheritsFrom("TH2") :
             histoName = obj.GetName()
             if histoName.find("QUANT") == -1: continue
         
-            QUANT = histoName[histoName.find("QUANT")+len("QUANT"):
-                                  histoName.find("-SAMPLE")]
+            QUANT = histoName[histoName.find("QUANT")+len("QUANT"): histoName.find("-SAMPLE")]
             SAMPLE = histoName[histoName.find("SAMPLE")+len("SAMPLE"):]
 
-            SITE =  SAMPLE.split("-")[0]
-            if not sitePalette.has_key(SITE): 
-                sitePalette[SITE] = myColor
-                myColor +=1
+            if not sitePalette.has_key(SAMPLE): 
+                if len(sitePalette)>0: myColor = sorted(sitePalette.values())[-1] +1 
+                else: myColor=1
+                sitePalette[SAMPLE] = myColor
 
             toPlot = False
             for f in posFilter:
@@ -99,7 +97,7 @@ def getHistos(listOfKeys, histos, graphs, posFilter, negFilter=""):
                         break
 
             if not toPlot: continue
-        
+                    
             if  obj.IsA().InheritsFrom("TGraph"):
                 if not graphs.has_key(QUANT):
                     graphs[QUANT] = {}
@@ -110,7 +108,7 @@ def getHistos(listOfKeys, histos, graphs, posFilter, negFilter=""):
                     histos[QUANT] = {}
                 histos[QUANT][SAMPLE] = obj
             
-    return sitePalette
+    return SAMPLE
 
 
 def getMaxHeightHisto(firstLabel, histo, histoName, maxY, quant="", goodHistoList=""):
@@ -134,18 +132,18 @@ def getMaxHeightHisto(firstLabel, histo, histoName, maxY, quant="", goodHistoLis
 
 
 def findPlotTogetherHisto(plotFilter, plotTogether, keys, toBePlotAlone, toBePlotTogether):
-#    toBePlotAlone = []
-#    toBePlotTogether = {}
+    compiledFilters = []
+    for f in plotFilter:
+        compiledFilters.append( re.compile(f) )
     for quant in keys:
         selected = False        
-        for f in plotFilter:
-            myFilter = re.compile(f)
-            if not myFilter.search(quant) == None:
+        for f in compiledFilters:
+            #myFilter = re.compile(f)
+            if not f.search(quant) == None:
                 selected = True
                 break
-
         if not selected: continue
-
+  
         together=False
         for sel in plotTogether:
             if not toBePlotTogether.has_key(sel): toBePlotTogether[sel] = []
@@ -156,15 +154,14 @@ def findPlotTogetherHisto(plotFilter, plotTogether, keys, toBePlotAlone, toBePlo
         if not together:
             if quant not in toBePlotAlone: toBePlotAlone.append(quant)
 
-#    return toBePlotAlone, toBePlotTogether
 
 
 def splitDirName(dirName):
     output = {}
     ###The split("/")[-1] get rid of mother directories, eg mydir/crab_dir
-    
-    splittedDirName = dirName.strip('/').split("/")[-1].split("-")
-    ###returns dirName if not in the right format
+    #splittedDirName = dirName.strip('/').split("/")[-1].split("-")
+    splittedDirName = dirName.split("-")
+ ###returns dirName if not in the right format
     if len(splittedDirName)<6: 
         return dirName
 
@@ -264,14 +261,20 @@ def printWikiStat(DIR_SUMMARY, posFilter, negFilter, legLabels):
 
     #### Actual quantities
     orderedLabels = {}
+    orderedProducers = []
     myPosFilter = re.compile(posFilter)
     myNegFilter = re.compile(negFilter)
 
     for label in LABELS:
         if myPosFilter.search(label) == None or not myNegFilter.search(label) == None : continue
 
+        #orderedProducers = []
         lwork = label.split("-")
-        if len(lwork)>2:
+        if lwork[0]=="TimeModule":
+            quant = lwork[-1]
+            orderedProducers.append(quant)
+
+        elif len(lwork)>2:
             tech = lwork[0]
             meas = lwork[1]
             quant = lwork[-1]
@@ -294,10 +297,28 @@ def printWikiStat(DIR_SUMMARY, posFilter, negFilter, legLabels):
                 line += "| *"+label+"*|"
                 for dir in tasks:
                     if DIR_SUMMARY[dir].has_key(label):
-                        line += " %.2f +- %.2f |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
+                        if label.find("Module")!=-1:
+                            line += " %.2e +- %.2e |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
+                        else:
+                            line += " %.2f +- %.2f |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
                     else:
                         line += " // |"
                 print line
+
+    #TimeModule printing
+    
+    if len(orderedProducers)>0:
+        line = ""
+        print "| *TimeProducers*||||||"
+        for producer in sorted(orderedProducers):
+            line = ""
+            line += "| *"+producer+"*|"
+            for dir in tasks:
+                if DIR_SUMMARY[dir].has_key("TimeModule-"+producer):
+                    line += " %.2e +- %.2e |" %(DIR_SUMMARY[dir]["TimeModule-"+producer][0], DIR_SUMMARY[dir]["TimeModule-"+producer][1])
+                else:
+                    line += " // |"
+            print line
 
     # putting tstorage entries at the first place
     for meas in sorted(orderedLabels.keys()):
