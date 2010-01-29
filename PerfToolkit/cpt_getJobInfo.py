@@ -4,11 +4,12 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getJobInfo.py, v 1.9 2010/01/05 15:54:57 leo Exp $
+# $Id: cpt_getJobInfo.py,v 1.1 2010/01/14 14:53:15 leo Exp $
 #################################################################
 
 
-# deleted overflow bin addition to last bin: it spoils stats
+# added Producer statistics
+# new function getModuleTimingStats
 
 
 
@@ -68,7 +69,10 @@ else:
     OUTFILE = ""
 
 
-acceptedSummaries = ['StorageTiming', "CrabTiming", "Timing"]
+### Values are: StorageTiming, CrabTiming, Timing, EventTiming, ModuleTiming, ProducerTiming
+acceptedSummaries = ['StorageTiming', "CrabTiming", "Timing","ProducerTiming"]
+discardFirstEvent_Module = True
+discardFirstEvent_Producer = True
 
 
 
@@ -77,9 +81,6 @@ LABELS = [ ]
 
 
 def parseXML_Crab(myXML, mapping):
-#    mapping["Success"] = False
-#    mapping["Error"] = {}
-
     XML_file = open(myXML.strip("\n").strip(" "))
     doc = xml.dom.minidom.parse(XML_file)
 
@@ -104,6 +105,9 @@ def parseXML_Crab(myXML, mapping):
     return mapping
 
 
+
+
+###put accepted summaries also here!
 def parseXML_CMSSW(myXML, mapping):
     mapping["Success"] = True ###WorkAround
     mapping["Error"] = {}
@@ -177,7 +181,59 @@ def getTimingStats(logfile, mapping):
                 
     pipe.close()
 
-    #print mapping        
+
+
+
+
+def getModuleTimingStats(logfile, mapping):
+    pipe = os.popen("grep -E 'Begin processing the|TimeModule' "+logfile)
+    mapping["TimeModule-record"] = []
+    mapping["TimeModule-event"] = []
+    prevRecord = 0
+    record=0
+    for x in pipe:
+        find1 =  x.find("Begin processing the")
+        find2 = x.find("TimeModule> ")
+    
+        if find1 !=-1 :
+            prevRecord=record
+            record = float( x[len("Begin processing the"): x.find("record")-3])
+        elif find2 != -1: 
+            mapping["TimeModule-record"].append(record)
+            splitX =  x.strip('\n').split(" ")
+            event = float(splitX[1])
+            producer = splitX[4]
+            module = splitX[3]
+            secs = float(splitX[5])
+            mapping["TimeModule-event"].append(event)
+
+            if not mapping.has_key("TimeModule-"+producer): 
+                mapping["TimeModule-"+producer] = {}
+                #mapping["TimeModule_"+producer]['TOTAL'] = []
+            if not mapping["TimeModule-"+producer].has_key(module): mapping["TimeModule-"+producer][module] = []
+            mapping["TimeModule-"+producer][module].append(secs)
+            
+    for x in mapping.keys():
+        if x.find('TimeModule')!=-1 and x.find('record')==-1 and x.find('event')==-1:
+            #print x
+            mapping[x]['TOTAL'] = []
+            #print mapping[x]
+            for y in mapping[x].keys():
+                if y=="TOTAL": continue
+                #print '\t', y
+                i = 0
+                if len(mapping[x]['TOTAL'])==0:
+                    j=0
+                    while j<len(mapping[x][y]):
+                        mapping[x]['TOTAL'].append(0)
+                        j+=1
+                while i<len(mapping[x][y]):
+                    mapping[x]['TOTAL'][i]+= mapping[x][y][i]
+                    i+=1
+                #for z in mapping[x][y]:
+                #    print '\t\t ', z
+            #print x,"END:",mapping[x]['TOTAL']
+
 
 
 ### from hh:mm:ss to secs
@@ -245,6 +301,8 @@ def parseDir_Crab(logdir, subdir):
 
         if job_output["Success"]:
             getTimingStats(log_file, job_output)
+            if "ProducerTiming" in acceptedSummaries or "ModuleTiming" in acceptedSummaries:
+                getModuleTimingStats(log_file, job_output)
 
             xml_file = logdir+"crab_fjr_"+str(lognum)+".xml"
             if not os.path.isfile( xml_file ):
@@ -278,6 +336,7 @@ def parseDir_CMSSW(logname):
         if job_output["Success"]:
             parseCMSSW_stdOut(logFile, job_output)
             getTimingStats(logFile, job_output)
+            #getModuleTimingStats(logFile, job_output)
         #totalFiles += 1
     
     #print job_output
@@ -443,6 +502,9 @@ def getJobStatistics(LOGDIR,OUTFILE):
             elif  isinstance( job_output[label] , list):
                 if not SINGLE_DIR_DATA.has_key(label): SINGLE_DIR_DATA[label] = []
                 SINGLE_DIR_DATA[label].append( job_output[label])
+            elif  isinstance( job_output[label] , dict):
+                if not SINGLE_DIR_DATA.has_key(label): SINGLE_DIR_DATA[label] = {}
+                SINGLE_DIR_DATA[label] = job_output[label]
             else:
                 continue
    
@@ -485,6 +547,8 @@ def getJobStatistics(LOGDIR,OUTFILE):
 
         for label in LABELS:
             if label.find("TimeEvent")!=-1: continue ##these are plotted separately
+            if label.find("TimeModule")!=-1: continue ##these are plotted separately
+
             single_H[label] = {}
             binEdges = setBinEdges(job_output,label) 
             single_H[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName, sampleName, binEdges['bins'], binEdges['lowerBin'], binEdges['upperBin'])
@@ -498,21 +562,14 @@ def getJobStatistics(LOGDIR,OUTFILE):
                 single_H[label].Fill( SINGLE_DIR_DATA[label] )
             else:
                 for entry in SINGLE_DIR_DATA[label]:
-                     single_H[label].Fill( float(entry) )
+                    single_H[label].Fill( float(entry) )
  
             nBins = single_H[label].GetNbinsX()
-#            single_H[label].SetBinContent( nBins-1 , single_H[label].GetBinContent( nBins )+0)
-#                                                        single_H[label].GetBinContent( nBins-1 )) 
+
         single_Graph = {}
         for label in ['TimeEvent_secs','TimeEvent_cpuSecs','TimeEvent_cpuPercentage','TimeEvent_eleIsoDepositTk-CandIsoDepositProducer_secs']:
-            #print label
             if label.find("TimeEvent")==-1: continue
             if label.find("record")!=-1 or label.find("event")!=-1 : continue
-            #single_H[label] = {}
-            #binEdges = setBinEdges(job_output,label) 
-            #single_H[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName, sampleName, binEdges['bins'], binEdges['lowerBin'], binEdges['upperBin'])
-            #single_H[label].StatOverflows(ROOT.kTRUE)
-            
             single_Graph[label] = ROOT.TGraphAsymmErrors()
             
             if not SINGLE_DIR_DATA.has_key(label):
@@ -545,11 +602,33 @@ def getJobStatistics(LOGDIR,OUTFILE):
             single_Graph[label].SetName( 'QUANT'+label+'-SAMPLE'+sampleName )
             single_Graph[label].Write( 'QUANT'+label+'-SAMPLE'+sampleName);
            
-        outFile.Write()
-        outFile.Close()
+      
 
         
+        prod_H2 = {}
+        ### Producers statistics
+        for label in LABELS:
+            if label.find("TimeModule")==-1: continue ##these are plotted separately
+            if label.find("event")!=-1 or label.find("record")!=-1: continue
 
+            prod_H2[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName, sampleName, 100, 0, 1)
+            prod_H2[label].StatOverflows(ROOT.kTRUE)
+            
+            if not SINGLE_DIR_DATA.has_key(label):
+                print "[WARNING]: "+label+" quantity not available"
+                continue
+            i=0
+            for entry in SINGLE_DIR_DATA[label]["TOTAL"]:
+                if i==0 and discardFirstEvent_Producer: 
+                    i=1
+                    continue
+                prod_H2[label].Fill(label[len("TimeModule-"):], entry)
+
+
+
+
+        outFile.Write()
+        outFile.Close()
 
 
 if __name__ == '__main__':
