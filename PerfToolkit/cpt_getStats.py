@@ -4,13 +4,17 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getStats.py,v 1.2 2010/01/14 17:52:48 leo Exp $
+# $Id: cpt_getStats.py,v 1.3 2010/01/14 18:23:38 leo Exp $
 #################################################################
 
 
 ### corrected bug in setting logscales for graphs
-
-
+### works also with files in differet dirs (stripping moved from utils to getStats)
+### added negative filter to plot selection
+### sorted filelist
+### corrected bug in plotting plotTogether plots
+### introduced samplePalette dict in getHistos
+### further check on non-existing files
 
 from sys import argv,exit
 from os import popen, path
@@ -48,26 +52,33 @@ if len(args)<1:
 ###if you want to add a label to canvas names
 LABEL=""
 
-###filter quantities to be plotted
+###filter quantities to be considered
 filter = [
-    ".*read.*[^(max|min)].*",
-#    ".*(read-num-successful-operations).*",
-#    ".*read-max-msec.*",
-#    ".*read.*(total-msecs).*",
-#    ".*seek.*(total-msecs|total-megabytes|num-successful-operations).*",
+    ".*read.*",
+    ".*open.*",
+   ".*seek.*",
     "Time",
     "Percentage",
     "User",
     "Error"
 ]
 
+negFilter = [
+#    "TimeModule",
+    ".*read.*m(in|ax).*",
+    ".*open.*m(in|ax).*"
+    ]
+
+
+###filter quantities to be plotted
 plotFilter = [  
    "readv-total-msecs",
    "read-total-msecs",
    "TimeEvent",
    "Percentage",
    "UserTime",
-   "WrapperTime"
+   "TimeModule"
+   
    ]
 
 ### plot these quantities overlapped (excluded)
@@ -78,7 +89,6 @@ plotTogether = [
     "readv-total-msecs",
     "read-total-msecs"
     #"open-total-msecs",
-    #"read-num-successful-operations"
     ]
 
 
@@ -90,6 +100,7 @@ summaryPlots =  (
 )
 
 legendComposition = ["Site","Cfg","Label"] 
+textOnCanvas = ["Site", "some label"]
 
 doSummary = True
 
@@ -140,15 +151,18 @@ for arg in args:
         fileList.append(arg)
     
 
-
+if len(fileList)==0:
+    print "[ERROR] No good files has been given as input, exiting"
+    exit(1)
 
 
 toBePlotAlone = []
 toBePlotTogether = {}
-sitePalette = {}
+samplePalette = {}
 histos = {}
 graphs = {}
 sePalette = {"dcap":1,"gsidcap":2,"file":5,"local":4,'tfile':5,'rfio':6}
+### you need to keep all the TFiles open in order to keep the histos loaded
 rootFile = {}
 spName = {}
 STATS = {}
@@ -156,13 +170,11 @@ STATS = {}
 xAxisRange = {}
 
 cName = args[0][:args[0].find(".")]
-for file in fileList:
+for file in sorted(fileList):
     rootFile[file] =  ROOT.TFile(file)
     listOfHistoKeys = ROOT.gDirectory.GetListOfKeys();
-    sitePalette =  getHistos(listOfHistoKeys, histos, graphs,  filter)
-    sampleName = file.replace(".root","")
+    sampleName = getHistos(listOfHistoKeys, histos, graphs, samplePalette, filter, negFilter)
     spName[sampleName] =  splitDirName(sampleName)
-
 
 
 keys =  histos.keys()
@@ -193,7 +205,8 @@ for quant in keys:
                     STATS[sample]["Error"][errLabel] = 100*round(myH.GetBinContent(i+1)/STATS[sample]["Failures"],1)
             
         # or quant == "Error": continue
-        else: STATS[sample][quant] = ( histos[quant][sample].GetMean(1), histos[quant][sample].GetRMS(1) )
+        else: 
+            STATS[sample][quant] = ( histos[quant][sample].GetMean(1), histos[quant][sample].GetRMS(1) )
         wBinWidth = -1
         if myH.GetName().find('msecs') !=-1 or myH.GetName().find('Time') !=-1: wBinWidth =options.BinWidthTime 
         doRebin(myH, wBinWidth)
@@ -202,6 +215,10 @@ for quant in keys:
             if not xAxisRange.has_key(quant): xAxisRange[quant] = [1000000000,0]
             getMaxHistoRange(myH, xAxisRange[quant])
         
+
+
+
+
 
 canvas = {}
 legend = {}
@@ -218,21 +235,24 @@ for sample in sorted(spName.keys()):
 
 printWikiStat(STATS, "", ".*(min|max).*", legLabel)
 
+
+
+
 drawOpt = "histo"
 for quant in toBePlotAlone:
     if quant in summaryPlots: continue
-    h=1
+    #h=1
     histoKeys =  histos[quant].keys()
     histoKeys.sort()
     maxY = 0.0
     firstLabel=''
     for histo in histoKeys:
-        setHisto(histos[quant][histo], h, "","",quant, 1 )
+        setHisto(histos[quant][histo], samplePalette[histo], "","",quant, 1 )
         if not options.noAutoBin:
             histos[quant][histo].GetXaxis().SetRangeUser(xAxisRange[quant][0], xAxisRange[quant][1])
         
         firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo,  maxY, quant )
-        h +=1
+        #h +=1
 
     if len(firstLabel)<2: continue
     canvas[quant] = createCanvas(LABEL+cName+"-"+quant)
@@ -250,26 +270,28 @@ for quant in toBePlotAlone:
         canvas[quant].Update()
         canvas[quant].SaveAs(LABEL+cName+"-"+quant+".png") 
 
+
+### plotting overlapping plots
 for sel in toBePlotTogether.keys():
-    if quant in summaryPlots: continue
+    ### not plotting plots already in summary canvas
+    if sel in summaryPlots: continue
     firstHisto = True
     goodHistos = {}
     maxY = 0
     firstLabel = ()
     for quant in toBePlotTogether[sel]:
-        print quant
         seType = quant.split("-")[0]
         goodHistos[quant]=[]
         histoKeys = histos[quant].keys()
         histoKeys.sort()
         h=1
         for histo in histoKeys:
-            setHisto(histos[quant][histo], h,sePalette[seType] ,"",sel, 1 )
+            setHisto(histos[quant][histo], samplePalette[histo], sePalette[seType] ,"",sel, 1 )
             if not options.noAutoBin:
                 histos[quant][histo].GetXaxis().SetRangeUser(xAxisRange[quant][0], xAxisRange[quant][1])
            
             firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo, maxY, quant, goodHistos[quant])
-            h+=1
+            #h+=1
             
     if firstLabel == (): continue
     canvas[sel] = createCanvas(LABEL+cName+"-"+sel)
@@ -278,7 +300,7 @@ for sel in toBePlotTogether.keys():
     
     for quant in toBePlotTogether[sel]:
         for histo in goodHistos[quant]:
-            legend[sel].AddEntry(histos[quant][histo],legLabel[sample]+" "+quant.split("-")[0] ,"l" )
+            legend[sel].AddEntry(histos[quant][histo],legLabel[histo]+" "+quant.split("-")[0] ,"l" )
             if quant==firstLabel[0] and histo==firstLabel[1]: continue
             histos[quant][histo].DrawNormalized(drawOpt+" same")
             
@@ -286,6 +308,9 @@ for sel in toBePlotTogether.keys():
     if options.savePng:
         canvas[sel].Update()
         canvas[sel].SaveAs(LABEL+"-"+sel+".png") 
+
+
+
 
 
 
@@ -301,8 +326,8 @@ for quant in graphs.keys():
     i=0
     for sample in graphs[quant].keys():
         legend[quant].AddEntry(graphs[quant][sample],legLabel[sample] ,"p" )
-        graphs[quant][sample].SetMarkerColor(i+1)
-        graphs[quant][sample].SetLineColor(i+1)
+        graphs[quant][sample].SetMarkerColor(samplePalette[sample])
+        graphs[quant][sample].SetLineColor(samplePalette[sample])
         graphs[quant][sample].SetMarkerStyle(20+i)
         mGraph[quant].Add( graphs[quant][sample])
         i += 1
@@ -327,7 +352,6 @@ viewCanvas["Overview"] = summaryPlots
 
 viewTCanvas = {}
 for c in viewCanvas.keys():
-    
     viewTCanvas[c] = createCanvas(LABEL+cName+"-"+c) 
     ROOT.gPad.SetFillColor(0)
     ROOT.gPad.SetBorderSize(0)
@@ -336,8 +360,6 @@ for c in viewCanvas.keys():
     i=1
     for quant in viewCanvas[c]:
         viewTCanvas[c].cd(i)
-        myH=1
-        
         maxY = 0.0
         firstLabel=()
         legend[quant] = createLegend()
@@ -345,8 +367,8 @@ for c in viewCanvas.keys():
         if not histos.has_key(quant):
             print "[WARNING] Histo "+quant+" not available"
             continue
-        for h in histos[quant].keys():
-            setHisto(histos[quant][h], myH, "","",quant, 1 )
+        for h in sorted(histos[quant].keys()):
+            setHisto(histos[quant][h], samplePalette[h], "","",quant, 1 )
             
             if not options.noAutoBin:
                 histos[quant][h].GetXaxis().SetRangeUser(xAxisRange[quant][0], xAxisRange[quant][1])
@@ -354,8 +376,6 @@ for c in viewCanvas.keys():
             firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][h], h,  maxY, quant )
             histos[quant][h].SetLineWidth(2)
             legend[quant].AddEntry(histos[quant][h],legLabel[h] ,"l" )
-            
-            myH+=1
         i+=1
 
         if firstLabel == (): continue
