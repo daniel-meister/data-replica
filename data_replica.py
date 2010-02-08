@@ -4,19 +4,12 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.18 2010/01/13 16:16:51 leo Exp $
+# $Id: data_replica.py,v 1.19 2010/01/15 14:50:05 leo Exp $
 #################################################################
 
 
-# existance check on srm destination before copy starts (in copyFile )
-# reduced sleep time after a copy to 2 secs to speed up large transfers
-# stderr thrown away from getFileSizeLCG
-# added EXISTING_LOGFILE, containing lfn and pfn of files existing on dest
-# used "File exist" as match for existance error
-# updated help with names of logfiles
-# --recreate-subdirs does not work atm with copy in a local filesystem (or anyway without --to-site set), added options check
-# by default, T0 and MSS into DENIED_SITES
-
+# small bugfix in checking local dest file size
+# adding enable/disable flag for SE replication
 
 import os
 from os import popen, path, environ
@@ -29,6 +22,8 @@ PREFERRED_SITES = ["T2"]
 DENIED_SITES = ["T0","MSS"]
 PROTOCOL = "srmv2"
 
+###WARNING: this enables la possibility to fully replicate a ES
+ENABLE_REPLICATION=False
 
 ###for lcg-utils>=1.7
 LCG_OPTIONS_17 = "--srm-timeout=6000 "
@@ -60,7 +55,7 @@ usage = """usage: %prog [options] filelist.txt [dest_dir]
 
     Sites must have a standard name, e.g. T2_CH_CSCS
 
-    Four log-files can be produced by this script:
+    Five log-files can be produced by this script:
        * <logfile>.log: contains a PhEDEx-style log
        * <logfile>_existingList.log: contains LFNs and PFNs of files existing on destination (SRM
          endpoints only)
@@ -168,7 +163,10 @@ if options.TO_SITE == "":
     print "WARNING: no dest site given, assuming PFN destination"
 
 if options.TO_SITE != "" and DESTINATION=="":
-    print "No DESTINATION given, replicating data using lfn2pfn information"
+    if ENABLE_REPLICATION: print "No DESTINATION given, replicating data using lfn2pfn information"
+    else:
+        print "Full SE replica disabled, please give a destination"
+        exit(1)
     
 if options.TO_SITE == "" and DESTINATION=="":
     print "You need to specify at least --to-site or dest_dir"    
@@ -454,7 +452,8 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
     ### checking size
     if SUCCESS == 0:
         if dest.find('file:///')!=-1:
-            myLog["dest size"] = os.stat( dest[len('file:///'):]).st_size
+            if not os.path.isfile( dest[len('file:///'):].strip()): myLog["dest size"] = 0
+            else: myLog["dest size"] = os.stat( dest[len('file:///'):].strip()).st_size
         else:
             myLog["dest size"] = getFileSizeLCG(dest)
 
@@ -728,6 +727,7 @@ for lfn in list.readlines():
 
         else:
             pfn = retrieve_pfn(lfn,options.FROM_SITE)
+            printDebug("PFN:"+ pfn)
             source = {"pfn":pfn,"node":options.FROM_SITE}
 
             if options.FROM_SITE!='LOCAL':
