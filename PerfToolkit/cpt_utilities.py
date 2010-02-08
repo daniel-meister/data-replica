@@ -4,14 +4,11 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_utilities.py,v 1.1 2010/01/14 14:53:15 leo Exp $
+# $Id: cpt_utilities.py,v 1.2 2010/01/29 13:32:16 leo Exp $
 #################################################################
 
 
-### new ordering for stats
-### added legLabels to stats
-### different format for TimeModule and the others
-### added print output for TimeModule Producers, statistics ned to be corrected (TH2 instead of TH1)
+### cleaning/comments
 
 
 from sys import argv,exit
@@ -40,7 +37,7 @@ def createCanvas(title):
     return canvas
 
 def createLegend():
-    legend = ROOT.TLegend(0.2,1,0.9,0.75)
+    legend = ROOT.TLegend(0.,1,1.,0.75)
     legend.SetTextFont(42)
     legend.SetBorderSize(0)
     legend.SetFillColor(0)
@@ -59,11 +56,9 @@ def setHisto(histo, color, lineStyle,title,Xtitle, rebin):
     histo.SetTitle(title)
     histo.GetXaxis().SetTitle(Xtitle)
     if lineStyle !="": histo.SetLineStyle( lineStyle ) 
-
-
-
 #    nBins = histo.GetNbinsX()
 #    histo.SetBinContent(nBins, histo.GetBinContent(nBins+1) )
+
 
 
 
@@ -112,15 +107,13 @@ def getHistos(listOfKeys, histos, graphs, sitePalette, posFilter, negFilter=""):
 
 
 def getMaxHeightHisto(firstLabel, histo, histoName, maxY, quant="", goodHistoList=""):
-    if histo.Integral() == 0:
-        return firstLabel, maxY
+    ###if empty, exit
+    if histo.Integral() == 0: return firstLabel, maxY
     
     maxBin =  histo.GetMaximumBin()
     maxValue =  histo.GetBinContent( maxBin )/ histo.Integral()
 
-    #zeroBin = histo.GetBinWithContent(0,(-100000,1000000))
-    #zeroValue = histo.GetBinContent( zeroBin )/ histo.Integral()
-
+    ### check if the only bin is the first one, and if given fill goodHistoList with which are not
     if not (maxBin == 1 and maxValue==1) and not (maxValue==1 and histo.GetBinLowEdge(maxBin)==0 ):
         if goodHistoList!="": goodHistoList.append(histoName)
         if maxValue>maxY:
@@ -128,6 +121,7 @@ def getMaxHeightHisto(firstLabel, histo, histoName, maxY, quant="", goodHistoLis
             maxY = maxValue
 
     return firstLabel, maxY
+
 
 
 
