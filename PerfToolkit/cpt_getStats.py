@@ -4,17 +4,18 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getStats.py,v 1.3 2010/01/14 18:23:38 leo Exp $
+# $Id: cpt_getStats.py,v 1.4 2010/01/29 13:31:41 leo Exp $
 #################################################################
 
+### stats for producers/modules timing added
+### code cleaning/comments
+### first plotting for mosule/producer timing
 
-### corrected bug in setting logscales for graphs
-### works also with files in differet dirs (stripping moved from utils to getStats)
-### added negative filter to plot selection
-### sorted filelist
-### corrected bug in plotting plotTogether plots
-### introduced samplePalette dict in getHistos
-### further check on non-existing files
+### bug fix in plotting time module (were plotted even if not requested)
+### added png filename as variable, used also as tcanvas naming
+
+### TODO: make a nice check in plotting canvas based on plotFilter
+###       use formatting for png filenames (SITE, etc...)
 
 from sys import argv,exit
 from os import popen, path
@@ -39,7 +40,8 @@ parser.add_option("--no-auto-bin",action="store_true", dest="noAutoBin", default
                   help="Automatic histo binning")
 parser.add_option("--binwidth-time",action="store", dest="BinWidthTime", default=30,
                   help="Bin width of time histos in seconds")
-
+parser.add_option("--no-plots",action="store_false", dest="drawPlots", default=True,
+                  help="Do not draw plots")
 
 (options, args) = parser.parse_args()
 
@@ -50,7 +52,10 @@ if len(args)<1:
 
 
 ###if you want to add a label to canvas names
-LABEL=""
+LABEL="DCAdaptor+RFIO"
+###name prefix of png files
+PNG_NAME_FORMAT= ['Site',LABEL]
+
 
 ###filter quantities to be considered
 filter = [
@@ -64,7 +69,7 @@ filter = [
 ]
 
 negFilter = [
-#    "TimeModule",
+    "TimeModule",
     ".*read.*m(in|ax).*",
     ".*open.*m(in|ax).*"
     ]
@@ -72,18 +77,19 @@ negFilter = [
 
 ###filter quantities to be plotted
 plotFilter = [  
-   "readv-total-msecs",
+   #"readv-total-msecs",
    "read-total-msecs",
    "TimeEvent",
    "Percentage",
-   "UserTime",
-   "TimeModule"
+   "UserTime"
+#   "TimeModule"
    
    ]
 
 ### plot these quantities overlapped (excluded)
 plotTogether = [
     #"cache-read-total-megabytes",
+    #"TimeModule",
     "readv-total-megabytes",
     "read-total-megabytes",
     "readv-total-msecs",
@@ -100,10 +106,12 @@ summaryPlots =  (
 )
 
 legendComposition = ["Site","Cfg","Label"] 
-textOnCanvas = ["Site", "some label"]
+textOnCanvas = ["Site", "some label"] # unused
 
 doSummary = True
 
+### global drawing options
+drawOpt = "histo"
 
 def doRebin(histo, wantedBinWidth):
     nBins = histo.GetNbinsX()
@@ -183,30 +191,44 @@ findPlotTogetherHisto(plotFilter, plotTogether, keys,  toBePlotAlone, toBePlotTo
 
 
 ###Stats from histos
+#### a loop is instatiated over hist keys, a global STATS[sample][quant] dict 
+#### is created to hold the statistics of samples
 for quant in keys: 
     for sample in histos[quant].keys():
         myH = histos[quant][sample]
                 
         if not STATS.has_key(sample): STATS[sample]={'Error':{}}
+        mySTATS = STATS[sample]
+        ### success/error stats: if no CpuPerc value found, no successes
         if quant == "Error": 
-            STATS[sample]["Failures"] = myH.Integral()
+            mySTATS["Failures"] = myH.Integral()
             if not histos.has_key("CpuPercentage"):
-                STATS[sample]["Success"] = 0
-                    
+                mySTATS["Success"] = 0
             elif not histos["CpuPercentage"].has_key(sample):
-                STATS[sample]["Success"] = 0
+                mySTATS["Success"] = 0
             else:
-                STATS[sample]["Success"]  =  histos["CpuPercentage"][sample].Integral() #- STATS[sample]["Failures"] 
+                mySTATS["Success"]  =  histos["CpuPercentage"][sample].Integral() #- STATS[sample]["Failures"] 
             for i in range(myH.GetNbinsX()):
                 errLabel = myH.GetXaxis().GetBinLabel(i+1)
                 if errLabel!="": 
-                    if not STATS[sample]["Error"].has_key(errLabel): 
-                        STATS[sample]["Error"][errLabel] = 0
-                    STATS[sample]["Error"][errLabel] = 100*round(myH.GetBinContent(i+1)/STATS[sample]["Failures"],1)
-            
-        # or quant == "Error": continue
+                    if not mySTATS["Error"].has_key(errLabel): 
+                        mySTATS["Error"][errLabel] = 0
+                    mySTATS["Error"][errLabel] = 100*round(myH.GetBinContent(i+1)/mySTATS["Failures"],1)
+
         else: 
-            STATS[sample][quant] = ( histos[quant][sample].GetMean(1), histos[quant][sample].GetRMS(1) )
+            ### Here X is the Producer/module label, Y the actual value. Only the first bin is filled
+            if quant.find("TimeModule")!=-1:
+                #bin = 1
+                #while bin <= myH.GetNbinsX():
+                mean = myH.GetBinContent(1)
+                error = myH.GetBinError(1)
+            ### all the others
+            else:
+                mean =  myH.GetMean(1)
+                error = myH.GetRMS(1) 
+            mySTATS[quant] = (mean, error)
+
+        ### histos rebinning
         wBinWidth = -1
         if myH.GetName().find('msecs') !=-1 or myH.GetName().find('Time') !=-1: wBinWidth =options.BinWidthTime 
         doRebin(myH, wBinWidth)
@@ -217,54 +239,61 @@ for quant in keys:
         
 
 
-
-
-
-canvas = {}
-legend = {}
-
-### legend entries for each sample
+### legend entries for each sample, needed also for Twiki stats
 legLabel = {}
 for sample in sorted(spName.keys()):
+    legLabel[sample] = ""
     if isinstance(spName[sample], str):
-        legLabel[sample] = spName[sample]
+        legLabel[sample] += spName[sample]
+      
     else:
-        legLabel[sample] = ""
         for x in legendComposition:
             legLabel[sample] += spName[sample][x]+" "
 
+### png filenames. takes info from spName only from the first sample
+PNG_NAME=""
+sampleKey = spName.keys()[0]
+for x in PNG_NAME_FORMAT:
+    if spName[sampleKey].has_key(x) and not isinstance(spName[sampleKey], str): PNG_NAME+=spName[sampleKey][x]+"-"
+    else: PNG_NAME += x+"-"
+PNG_NAME = PNG_NAME[:-1]
+
+
+
 printWikiStat(STATS, "", ".*(min|max).*", legLabel)
+if not options.drawPlots: exit(0)
 
 
-
-
-drawOpt = "histo"
+legend = {}
+canvas = {}
+### plotting stand alone histos
 for quant in toBePlotAlone:
     if quant in summaryPlots: continue
-    #h=1
     histoKeys =  histos[quant].keys()
     histoKeys.sort()
     maxY = 0.0
     firstLabel=''
     for histo in histoKeys:
-        setHisto(histos[quant][histo], samplePalette[histo], "","",quant, 1 )
+        myH = histos[quant][histo]
+        setHisto( myH, samplePalette[histo], "","",quant, 1 )
         if not options.noAutoBin:
-            histos[quant][histo].GetXaxis().SetRangeUser(xAxisRange[quant][0], xAxisRange[quant][1])
-        
-        firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo,  maxY, quant )
-        #h +=1
+            myH.GetXaxis().SetRangeUser(xAxisRange[quant][0], xAxisRange[quant][1])
+        ### finds the histo with the max height
+        firstLabel, maxY = getMaxHeightHisto( firstLabel, myH, histo,  maxY, quant )
 
+    ### if all histos are empty, do not plot
     if len(firstLabel)<2: continue
-    canvas[quant] = createCanvas(LABEL+cName+"-"+quant)
+    canvas[quant] = createCanvas(PNG_NAME+"-"+quant)
     legend[quant] = createLegend()
+    ### actual plotting
     if quant != "Error":  histos[quant][firstLabel[1]].DrawNormalized(drawOpt)
     else:  histos[quant][firstLabel[1]].Draw(drawOpt)
     for histo in histoKeys:
-        legend[quant].AddEntry(histos[quant][histo],legLabel[sample], "l" )
-
+        myH = histos[quant][histo]
+        legend[quant].AddEntry( myH, legLabel[sample], "l" )
         if histo==firstLabel[1]: continue
-        if quant != "Error": histos[quant][histo].DrawNormalized(drawOpt+" sames")
-        else:  histos[quant][histo].Draw(drawOpt+" sames")
+        if quant != "Error": myH.DrawNormalized(drawOpt+" sames")
+        else:  myH.Draw(drawOpt+" sames")
     legend[quant].Draw()
     if options.savePng:
         canvas[quant].Update()
@@ -275,26 +304,27 @@ for quant in toBePlotAlone:
 for sel in toBePlotTogether.keys():
     ### not plotting plots already in summary canvas
     if sel in summaryPlots: continue
-    firstHisto = True
     goodHistos = {}
     maxY = 0
     firstLabel = ()
     for quant in toBePlotTogether[sel]:
+        print quant
         seType = quant.split("-")[0]
         goodHistos[quant]=[]
         histoKeys = histos[quant].keys()
         histoKeys.sort()
         h=1
         for histo in histoKeys:
-            setHisto(histos[quant][histo], samplePalette[histo], sePalette[seType] ,"",sel, 1 )
+            color = 1
+            if sePalette.has_key(seType): color = sePalette[seType]
+            setHisto(histos[quant][histo], samplePalette[histo], color ,"",sel, 1 )
             if not options.noAutoBin:
                 histos[quant][histo].GetXaxis().SetRangeUser(xAxisRange[quant][0], xAxisRange[quant][1])
            
             firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo, maxY, quant, goodHistos[quant])
-            #h+=1
-            
+                
     if firstLabel == (): continue
-    canvas[sel] = createCanvas(LABEL+cName+"-"+sel)
+    canvas[sel] = createCanvas(PNG_NAME+"-"+sel)
     legend[sel] = createLegend()
     histos[firstLabel[0]][firstLabel[1]].DrawNormalized(drawOpt)
     
@@ -307,7 +337,7 @@ for sel in toBePlotTogether.keys():
     legend[sel].Draw()
     if options.savePng:
         canvas[sel].Update()
-        canvas[sel].SaveAs(LABEL+"-"+sel+".png") 
+        canvas[sel].SaveAs(PNG_NAME+"-"+sel+".png") 
 
 
 
@@ -318,7 +348,7 @@ for sel in toBePlotTogether.keys():
 graphCanvas = {}
 mGraph = {}
 for quant in graphs.keys():
-    graphCanvas[quant] = createCanvas(LABEL+cName+"-"+quant) 
+    graphCanvas[quant] = createCanvas(PNG_NAME+"-"+quant) 
     legend[quant] = createLegend()
     mGraph[quant] = ROOT.TMultiGraph()
     graphCanvas[quant].SetLogx()
@@ -326,9 +356,11 @@ for quant in graphs.keys():
     i=0
     for sample in graphs[quant].keys():
         legend[quant].AddEntry(graphs[quant][sample],legLabel[sample] ,"p" )
+        ### set graph style
         graphs[quant][sample].SetMarkerColor(samplePalette[sample])
         graphs[quant][sample].SetLineColor(samplePalette[sample])
         graphs[quant][sample].SetMarkerStyle(20+i)
+
         mGraph[quant].Add( graphs[quant][sample])
         i += 1
 
@@ -336,12 +368,47 @@ for quant in graphs.keys():
     mGraph[quant].GetXaxis().SetTitle("record")
     mGraph[quant].GetYaxis().SetTitle(quant)
     mGraph[quant].GetXaxis().SetRangeUser(0.000001,500)
-    if quant.find('ecs')!=-1:  mGraph[quant].GetYaxis().SetRangeUser(0.001,30)
+    ### uncomment the following line if you want to put a specific range on TGraph's Y axix
+    #if quant.find('ecs')!=-1:  mGraph[quant].GetYaxis().SetRangeUser(0.001,30)
     mGraph[quant].Draw("ap")
     legend[quant].Draw()
     if options.savePng:
         graphCanvas[quant].Update()
-        graphCanvas[quant].SaveAs(LABEL+cName+"-"+quant+".png") 
+        graphCanvas[quant].SaveAs(PNG_NAME+"-"+quant+".png") 
+
+
+
+### plotting TimeModule producers timing stats
+toPlot = False
+if "TimeModule" in plotFilter: toPlot = True
+
+if toPlot:
+    isFirst = True
+    TimeModuleC = createCanvas(LABEL+cName+"-TimingModule")
+    TimeModuleL = createLegend()
+    TimeModule_H  = {}
+
+for sample in STATS.keys():
+    if not toPlot: continue
+
+    TimeModule_H[sample]  = ROOT.TH1F(sample+"-TimeModule","",10,0,1)
+    for quant in STATS[sample].keys():
+        if quant.find("TimeModule")==-1: continue
+        bin = TimeModule_H[sample].Fill(quant[len("TimeModule_"):], STATS[sample][quant][0])
+        TimeModule_H[sample].SetBinError(bin,STATS[sample][quant][1] )
+        TimeModule_H[sample].SetLineColor(  samplePalette[sample] )
+#setHisto(TimeModule_H[sample] , samplePalette[sample], 1 ,"",sel, 1 )
+        #firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo, maxY, quant, goodHistos[quant])
+    if isFirst:
+        TimeModule_H[sample].DrawNormalized(drawOpt)
+        isFirst = False
+    else:
+       TimeModule_H[sample].DrawNormalized(drawOpt+" sames")
+   
+if toPlot:
+    if options.savePng:
+        TimeModuleC.Update()
+        TimeModuleC.SaveAs(PNG_NAME+"-TimingModule.png") 
 
 
 #Print grand view
@@ -352,7 +419,7 @@ viewCanvas["Overview"] = summaryPlots
 
 viewTCanvas = {}
 for c in viewCanvas.keys():
-    viewTCanvas[c] = createCanvas(LABEL+cName+"-"+c) 
+    viewTCanvas[c] = createCanvas(PNG_NAME+"-"+c) 
     ROOT.gPad.SetFillColor(0)
     ROOT.gPad.SetBorderSize(0)
 
@@ -390,7 +457,7 @@ for c in viewCanvas.keys():
     viewTCanvas[c].Draw()
     if options.savePng:
         viewTCanvas[c].Update()
-        viewTCanvas[c].SaveAs(LABEL+cName+"-"+c+".png") 
+        viewTCanvas[c].SaveAs(PNG_NAME+cName+"-"+c+".png") 
 
 
 popen("sleep 60000")
