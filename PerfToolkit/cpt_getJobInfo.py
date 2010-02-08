@@ -4,12 +4,14 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getJobInfo.py,v 1.1 2010/01/14 14:53:15 leo Exp $
+# $Id: cpt_getJobInfo.py,v 1.2 2010/01/29 13:31:00 leo Exp $
 #################################################################
 
 
 # added Producer statistics
 # new function getModuleTimingStats
+
+# fixed small bug in error code reporting
 
 
 
@@ -71,6 +73,8 @@ else:
 
 ### Values are: StorageTiming, CrabTiming, Timing, EventTiming, ModuleTiming, ProducerTiming
 acceptedSummaries = ['StorageTiming', "CrabTiming", "Timing","ProducerTiming"]
+
+###discard the first event in histo filling
 discardFirstEvent_Module = True
 discardFirstEvent_Producer = True
 
@@ -282,7 +286,7 @@ def parseCrab_stdOut(log_file,crab_stdout):
             if not crab_stdout["Error"].has_key(metric):
                 crab_stdout["Error"][metric]=0
             crab_stdout["Error"][metric]+=1
-            
+    
     return crab_stdout
 
 
@@ -315,7 +319,6 @@ def parseDir_Crab(logdir, subdir):
                 else:
                     parseXML_Crab( xml_file,job_output)
                     #totalFiles += 1 ???? double?
-    
     return job_output
 
 
@@ -402,6 +405,10 @@ def setBinEdges(job_output, label):
         binEdges['lowerBin'] = 0.0
         binEdges['upperBin'] = 1. 
         binEdges['bins'] = 1 
+#    elif label.find("TimeModule") != -1:
+#        binEdges['lowerBin'] = 0.0
+#        binEdges['upperBin'] = 10. 
+#        binEdges['bins'] = 1        
     else:
         binEdges['lowerBin'] = 0
         binEdges['upperBin'] = 10000
@@ -536,9 +543,9 @@ def getJobStatistics(LOGDIR,OUTFILE):
         label="Error"
         single_H[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName,sampleName,200,0,1)
         for err in SUMMARY[label].keys():
+            print label, err, SUMMARY[label][err]
             single_H[label].Fill(err, SUMMARY[label][err] )
-
-        
+            
         if float(SUMMARY["Success"])==0:
             print LOGDIR," has no successful job"
             outFile.Write()
@@ -546,6 +553,7 @@ def getJobStatistics(LOGDIR,OUTFILE):
             exit(0)
 
         for label in LABELS:
+            if label=="Error": continue
             if label.find("TimeEvent")!=-1: continue ##these are plotted separately
             if label.find("TimeModule")!=-1: continue ##these are plotted separately
 
@@ -624,8 +632,7 @@ def getJobStatistics(LOGDIR,OUTFILE):
                     continue
                 prod_H2[label].Fill(label[len("TimeModule-"):], entry)
 
-
-
+        
 
         outFile.Write()
         outFile.Close()
