@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.19 2010/01/15 14:50:05 leo Exp $
+# $Id: data_replica.py,v 1.20 2010/02/08 10:50:17 leo Exp $
 #################################################################
 
 
@@ -580,6 +580,13 @@ from PSI/ETHZ with love
 
 print "Preferred Sites: ",PREFERRED_SITES
 print "Denied Sites: ", DENIED_SITES
+
+### checks existance of proxy
+pipe = os.popen("voms-proxy-info")
+#print pipe.close()
+if pipe.close()!=None:
+    print "Please create a voms-proxy before using this program: voms-proxy-init -voms cms"
+    exit(1)
 
 printDebug("phedex-like logfile: "+ options.logfile)
 
