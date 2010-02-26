@@ -4,11 +4,17 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_utilities.py,v 1.2 2010/01/29 13:32:16 leo Exp $
+# $Id: cpt_utilities.py,v 1.3 2010/02/08 11:14:16 leo Exp $
 #################################################################
 
 
-### cleaning/comments
+### small bugfix if no success job available (all aborted)
+### small bugfix in createCanvas
+### bug fix in finding the Error histo with the maximum Y
+### prints header on each subtable
+
+### TODO:
+#### place an external flag on getHistoMaximum (for chosing norm/notNormalized)
 
 
 from sys import argv,exit
@@ -25,8 +31,10 @@ def divideCanvas(canvas, numberOfHisto):
         canvas.Divide(2,2)
     elif numberOfHisto == 8:
         canvas.Divide(4,2)
+    elif  numberOfHisto >4 and numberOfHisto < 7:
+        canvas.Divide(3,2)
     elif  numberOfHisto >4 and numberOfHisto < 10:
-        canvas.Divide(3,3)
+        canvas.Divide(3,3)   
     elif  numberOfHisto >=10 and numberOfHisto < 13:
         canvas[label].Divide(3,4)
 
@@ -111,7 +119,16 @@ def getMaxHeightHisto(firstLabel, histo, histoName, maxY, quant="", goodHistoLis
     if histo.Integral() == 0: return firstLabel, maxY
     
     maxBin =  histo.GetMaximumBin()
-    maxValue =  histo.GetBinContent( maxBin )/ histo.Integral()
+    if histo.GetName().find("Error")==-1:
+        maxValue =  histo.GetBinContent( maxBin )/ histo.Integral()
+    else:
+        maxValue =  histo.GetBinContent( maxBin )
+
+    ###separated case for Error histos (first bin is not 0 bin)
+    if histo.GetName().find("Error")!=-1:
+        if maxValue>maxY:
+            firstLabel = quant,histoName
+            maxY = maxValue
 
     ### check if the only bin is the first one, and if given fill goodHistoList with which are not
     if not (maxBin == 1 and maxValue==1) and not (maxValue==1 and histo.GetBinLowEdge(maxBin)==0 ):
@@ -119,6 +136,7 @@ def getMaxHeightHisto(firstLabel, histo, histoName, maxY, quant="", goodHistoLis
         if maxValue>maxY:
             firstLabel = quant,histoName
             maxY = maxValue
+
 
     return firstLabel, maxY
 
@@ -132,12 +150,11 @@ def findPlotTogetherHisto(plotFilter, plotTogether, keys, toBePlotAlone, toBePlo
     for quant in keys:
         selected = False        
         for f in compiledFilters:
-            #myFilter = re.compile(f)
             if not f.search(quant) == None:
                 selected = True
                 break
         if not selected: continue
-  
+          
         together=False
         for sel in plotTogether:
             if not toBePlotTogether.has_key(sel): toBePlotTogether[sel] = []
@@ -208,19 +225,15 @@ def printWikiStat(DIR_SUMMARY, posFilter, negFilter, legLabels):
     LABELS = []
 
     ###Creating header
-    header = "| |"
+    header = ""
     tasks = DIR_SUMMARY.keys()
     tasks.sort()
     for dir in tasks:
-        #if isinstance(dir, str):
-        #    header += " *"+dir+"* |"
         header += " *"+legLabels[dir]+"* |"
-        #else:
-        #    header += " *"+dir.split("-")[0]+"-"+dir.split("-")[1]+" "+dir.split("-")[4]+" "+dir.split("-")[-1][:8]+"* |"
         for l in DIR_SUMMARY[dir].keys():
             if not l in LABELS: LABELS.append(l)
 
-    print header
+    print "|  |",header
 
     ###Success rate
     line = "| *Success*|"
@@ -228,6 +241,7 @@ def printWikiStat(DIR_SUMMARY, posFilter, negFilter, legLabels):
         total = DIR_SUMMARY[dir]["Success"] + DIR_SUMMARY[dir]["Failures"]
         if total==0:
             perc = 0
+            line += "%.1f%% (%.0f / %.0f) |" %(perc,DIR_SUMMARY[dir]["Success"], total)
         else:
             perc = 100*DIR_SUMMARY[dir]["Success"]/total
             line += "%.1f%% (%.0f / %.0f) |" %(perc,DIR_SUMMARY[dir]["Success"], total)
@@ -327,7 +341,7 @@ def printWikiStat(DIR_SUMMARY, posFilter, negFilter, legLabels):
     line =""
     for meas in sorted(orderedLabels.keys()):
         #if not meas in ["read","readv","seek","open"]: continue
-        print "| *"+meas.upper()+"*||||||"
+        print "| *"+meas.upper()+"*|", header #|||||"
         for quant in  sorted(orderedLabels[meas].keys()):
             #for char in  orderedLabels[meas][quant].keys():
             for quant2 in  sorted(orderedLabels[meas][quant].keys()):
