@@ -4,16 +4,11 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getJobInfo.py,v 1.2 2010/01/29 13:31:00 leo Exp $
+# $Id: cpt_getJobInfo.py,v 1.3 2010/02/08 11:12:31 leo Exp $
 #################################################################
 
 
-# added Producer statistics
-# new function getModuleTimingStats
-
-# fixed small bug in error code reporting
-
-
+### added actualread+readv quantity, not sure about its interpretation
 
 
 
@@ -483,15 +478,22 @@ def getJobStatistics(LOGDIR,OUTFILE):
 
         ###UserQuantities
         totalMB = 0
+        totalActualMB = 0
         totalReadTime = 0
    
         if job_output.has_key('tstoragefile-read-total-megabytes'): totalMB += float(job_output['tstoragefile-read-total-megabytes'])
         if job_output.has_key('tstoragefile-readv-total-megabytes'): totalMB += float(job_output['tstoragefile-readv-total-megabytes'])
+        
+        if job_output.has_key('tstoragefile-read-actual-total-megabytes'): totalActualMB += float(job_output['tstoragefile-read-actual-total-megabytes'])
+        if job_output.has_key('tstoragefile-readv-actual-total-megabytes'): totalActualMB += float(job_output['tstoragefile-readv-actual-total-megabytes'])
+
+        
 
         if isinstance(spDirName, str)==False:
             events = spDirName['EventsJob']
             if spDirName['EventsJob'][-1]=='k': events =  spDirName['EventsJob'][:-1]+'000'
             job_output['User_ReadkBEvt'] = 1024*totalMB/float(events)
+            job_output['Actual_Read+Readv_Total_MB'] = totalActualMB
         
         #totalFiles+=1
         computeErrorStat(job_output, SUMMARY)
@@ -526,7 +528,7 @@ def getJobStatistics(LOGDIR,OUTFILE):
         if job_output["Success"]==True: SUMMARY["Success"] +=1
         else: SUMMARY["Failures"] +=1
         
-        
+    SUMMARY["Total"] = SUMMARY["Failures"]+SUMMARY["Success"]
     #end log cycle
 
     LABELS.sort()
@@ -543,8 +545,8 @@ def getJobStatistics(LOGDIR,OUTFILE):
         label="Error"
         single_H[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName,sampleName,200,0,1)
         for err in SUMMARY[label].keys():
-            print label, err, SUMMARY[label][err]
-            single_H[label].Fill(err, SUMMARY[label][err] )
+            #if SUMMARY["Total"]!=0:
+            single_H[label].Fill(err, float(SUMMARY[label][err])) #/float(SUMMARY["Total"]) )
             
         if float(SUMMARY["Success"])==0:
             print LOGDIR," has no successful job"
