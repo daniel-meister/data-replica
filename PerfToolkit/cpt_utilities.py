@@ -4,14 +4,13 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_utilities.py,v 1.3 2010/02/08 11:14:16 leo Exp $
+# $Id: cpt_utilities.py,v 1.4 2010/02/26 17:38:38 leo Exp $
 #################################################################
 
 
-### small bugfix if no success job available (all aborted)
-### small bugfix in createCanvas
-### bug fix in finding the Error histo with the maximum Y
-### prints header on each subtable
+### Alphabetic sorting in the first part of the results table
+### added  plotH2dFromStats to plot bar histograms of quantities reported in the tables
+### new format introduced for dirs: KEY1.LABEL1-KEY2.LABEL2-etc
 
 ### TODO:
 #### place an external flag on getHistoMaximum (for chosing norm/notNormalized)
@@ -166,25 +165,38 @@ def findPlotTogetherHisto(plotFilter, plotTogether, keys, toBePlotAlone, toBePlo
             if quant not in toBePlotAlone: toBePlotAlone.append(quant)
 
 
-
-def splitDirName(dirName):
+#retrieves data from dir name. Three cases provided:
+# - the dir is in the format: KEY1.LABEL1-KEY2.LABEL2-etc
+# - the dir is in the format: SITE-CFG-DATASET-NEVTS-LABEL-DATE (back compatibility)
+# - none of the above: the dir name is returned as a string
+def splitDirName(dirName, strippedText=""):
     output = {}
-    ###The split("/")[-1] get rid of mother directories, eg mydir/crab_dir
-    #splittedDirName = dirName.strip('/').split("/")[-1].split("-")
+    if strippedText!="" and dirName.find(strippedText)!=-1:
+        dirName = dirName.replace(strippedText,"")
     splittedDirName = dirName.split("-")
- ###returns dirName if not in the right format
-    if len(splittedDirName)<6: 
+    isKeyLabel = True
+    for comp in splittedDirName:
+        comp = comp.split(".")
+        if len( comp ) <2:
+            isKeyLabel = False
+            output = {}
+            break
+        else:
+            label=""
+            for i in range(1, len(comp)): label += comp[i]+"_"
+            output[comp[0]] = label[:-1]
+    ###returns dirName if not in the right format
+    if len(splittedDirName)<6 and not isKeyLabel: 
         return dirName
-
-    output['Site'] = splittedDirName[0]
-    output['Cfg'] = splittedDirName[1]
-    output['Dataset'] = splittedDirName[2]
-    output['EventsJob'] = splittedDirName[3]
-    
-    if output['EventsJob'][-3:] == '000': output['EventsJob'] = output['EventsJob'][:-3]+"k"
-    output['Label'] = splittedDirName[4]
-    output['Date'] = splittedDirName[5][0:8]
-    output['Hour'] = splittedDirName[5][8:]
+    elif not isKeyLabel:
+        output['Site'] = splittedDirName[0]
+        output['Cfg'] = splittedDirName[1]
+        output['Dataset'] = splittedDirName[2]
+        output['EventsJob'] = splittedDirName[3]
+        if output['EventsJob'][-3:] == '000': output['EventsJob'] = output['EventsJob'][:-3]+"k"
+        output['Label'] = splittedDirName[4]
+        output['Date'] = splittedDirName[5][0:8]
+        output['Hour'] = splittedDirName[5][8:]
 
     return output
 
@@ -230,7 +242,8 @@ def printWikiStat(DIR_SUMMARY, posFilter, negFilter, legLabels):
     tasks.sort()
     for dir in tasks:
         header += " *"+legLabels[dir]+"* |"
-        for l in DIR_SUMMARY[dir].keys():
+        sortedKeys =  sorted(DIR_SUMMARY[dir].keys())
+        for l in sortedKeys:
             if not l in LABELS: LABELS.append(l)
 
     print "|  |",header
@@ -389,3 +402,27 @@ def getMaxHistoRange(myH, histoRange):
     if upRange > histoRange[1]: histoRange[1] = 1.3*upRange
 
  
+
+### plots th2f from stats for summaryPlots.
+### legendComposition is used to mark the different bins
+def plotHistoFromStats(histos2d, stats, summaryPlots, legendComposition, strippedText=""):
+    statsKeys = sorted(stats.keys())
+    for plot in summaryPlots:
+        histos2d[plot] = histos2d[plot] =  ROOT.TH1F(plot,"",1,0,0)
+        
+        i=1
+        isFirst = True
+        for task in statsKeys:
+            taskLabel=""
+            splittedTaskName = splitDirName(task, strippedText)
+            if isinstance(splittedTaskName, str): taskLabel = splittedTaskName
+            else:
+                for leg in legendComposition: taskLabel += splittedTaskName[leg]+"-"
+                taskLabel = taskLabel[:-1]
+            if plot in stats[task]:
+                histos2d[plot].Fill(taskLabel, stats[task][plot][0])
+                histos2d[plot].SetBinError(i, stats[task][plot][1] )
+                histos2d[plot].GetYaxis().SetTitle(plot)
+                isFirst = False
+                i+=1
+    
