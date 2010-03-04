@@ -4,11 +4,16 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getJobInfo.py,v 1.3 2010/02/08 11:12:31 leo Exp $
+# $Id: cpt_getJobInfo.py,v 1.4 2010/02/26 17:37:30 leo Exp $
 #################################################################
 
 
-### added actualread+readv quantity, not sure about its interpretation
+### First inclusion of net information, throught the reading of the
+###  (echo "Network start " `date +%s && /sbin/ifconfig eth0 | grep bytes` ) and
+###  (echo "Network stop " `date +%s && /sbin/ifconfig eth0 | grep bytes` )
+### NB: the Ifconfig_MB/s is only a very RAW quantity, only the MB transferred during the
+###  execution of cmsRun. Take this as a mean and bad quantity.  
+### new format introduced for dirs: KEY1.LABEL1-KEY2.LABEL2-etc, modified according to this
 
 
 
@@ -146,6 +151,25 @@ def parseXML_CMSSW(myXML, mapping):
         
     return mapping
 
+
+
+##Retrieve statistics not available through FJR
+def getNetworkStats(logfile, mapping):
+    pipe = os.popen("grep -E 'Network start|Network stop' "+logfile)
+    list = pipe.readlines()
+    if len(list)==2:
+        date = [0,0]
+        bytes = [0,0]
+        i=0
+        while i<2:
+            m_init = re.match(r"Network st.*\ +(\d+) RX bytes:(\d+).*", list[i])
+            if m_init!=None:
+                date[i] = float(m_init.group(1))
+                bytes[i] = float(m_init.group(2))
+            i+=1
+
+        mapping["Ifconfig_MB"] = (bytes[1]-bytes[0])/(1024*1024)
+        mapping["Ifconfig_MBoverS"] =  mapping["Ifconfig_MB"]/(date[1]-date[0])
 
 
 
@@ -334,6 +358,7 @@ def parseDir_CMSSW(logname):
         if job_output["Success"]:
             parseCMSSW_stdOut(logFile, job_output)
             getTimingStats(logFile, job_output)
+            getNetworkStats(logFile, job_output)
             #getModuleTimingStats(logFile, job_output)
         #totalFiles += 1
     
@@ -489,7 +514,7 @@ def getJobStatistics(LOGDIR,OUTFILE):
 
         
 
-        if isinstance(spDirName, str)==False:
+        if isinstance(spDirName, str)==False and spDirName.has_key("EventsJob"):
             events = spDirName['EventsJob']
             if spDirName['EventsJob'][-1]=='k': events =  spDirName['EventsJob'][:-1]+'000'
             job_output['User_ReadkBEvt'] = 1024*totalMB/float(events)
