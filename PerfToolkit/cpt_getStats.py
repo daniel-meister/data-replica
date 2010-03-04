@@ -4,12 +4,11 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getStats.py,v 1.5 2010/02/08 11:13:37 leo Exp $
+# $Id: cpt_getStats.py,v 1.6 2010/02/26 17:37:57 leo Exp $
 #################################################################
 
-### Disabled autobinnig for Error histos
-### plotting error percentage normalized to all jobs (while in the tables is still normalized to failure nmber)
-### small bug in chosing to plot TimeEvent graphs fixed in some way
+# added plotting of bar histograms of summaryPlots
+# fixes according to new dir naming scheme supported
 
 ### TODO: make a nice check in plotting canvas based on plotFilter
 ###       use formatting for png filenames (SITE, etc...)
@@ -37,6 +36,9 @@ parser = OptionParser(usage = usage, version="%prog 0.1")
 parser.add_option("--save-png",
                   action="store_true", dest="savePng", default=False,
                   help="Saves created histos in png format")
+parser.add_option("--save-root",
+                  action="store_true", dest="saveRoot", default=False,
+                  help="Saves created histos in a ROOT file. If enabled, these histos will be not drawn on screen")
 parser.add_option("--no-auto-bin",action="store_true", dest="noAutoBin", default=False,
                   help="Automatic histo binning")
 parser.add_option("--binwidth-time",action="store", dest="BinWidthTime", default=30,
@@ -58,21 +60,24 @@ if len(args)<1:
 LABEL=options.Label
 #LABEL="QCDvsBB"
 ###name prefix of png files
-PNG_NAME_FORMAT= [LABEL,'Site',"Label"]
-legendComposition = ["Site","Cfg","Label"] 
+PNG_NAME_FORMAT= ['Site',"Cfg","Setting","Label"]
+legendComposition = ["Set"] 
 #legendComposition = ["Site","Cfg","Dataset","Date"] 
 textOnCanvas = ["Site", "some label"] # unused
+strippedText="" # this in case you want to remove some string from the set name
+
 
 ###filter quantities to be considered
 filter = [
     ".*read.*",
-    ".*open.*",
-   ".*seek.*",
+#    ".*open.*",
+#   ".*seek.*",
     "Time",
     "Percentage",
     "User",
     "Error",
-    "Actual"
+    "Actual",
+    "Ifconfig"
 ]
 
 negFilter = [
@@ -110,7 +115,9 @@ summaryPlots =  (
 "CpuPercentage",
 "UserTime",
 "ExeTime",
-"tstoragefile-read-total-msecs"
+"tstoragefile-read-total-msecs",
+"Ifconfig_MB",
+"Ifconfig_MBoverS"
 #"Error"
 )
 
@@ -188,7 +195,7 @@ for file in sorted(fileList):
     rootFile[file] =  ROOT.TFile(file)
     listOfHistoKeys = ROOT.gDirectory.GetListOfKeys();
     sampleName = getHistos(listOfHistoKeys, histos, graphs, samplePalette, filter, negFilter)
-    spName[sampleName] =  splitDirName(sampleName)
+    spName[sampleName] =  splitDirName(sampleName, strippedText)
 
 
 keys =  histos.keys()
@@ -279,9 +286,11 @@ else:
 
 
 
-
+### printing statistics
 printWikiStat(STATS, "", ".*(min|max).*", legLabel)
 if not options.drawPlots: exit(0)
+
+if options.saveRoot: rootOutFile = ROOT.TFile.Open( PNG_NAME+".root","recreate")
 
 
 legend = {}
@@ -489,5 +498,17 @@ for c in viewCanvas.keys():
         viewTCanvas[c].Update()
         viewTCanvas[c].SaveAs(PNG_NAME+cName+"-"+c+".png") 
 
+histo_summary = {} 
+plotHistoFromStats(histo_summary, STATS, summaryPlots, legendComposition, strippedText)
+canvas_summary = {}
+ROOT.gStyle.SetPadBottomMargin(0.4)
+for plot in histo_summary.keys():
+    histo_summary[plot].SetBarOffset(0.3)
+    if options.saveRoot:  histo_summary[plot].Write()
+    else:
+        canvas_summary[plot] = createCanvas(PNG_NAME+"-"+plot+"_summary")
+        histo_summary[plot].Draw("h e")
+        
+if options.saveRoot: rootOutFile.Close()
 
 popen("sleep 60000")
