@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.20 2010/02/08 10:50:17 leo Exp $
+# $Id: data_replica.py,v 1.21 2010/02/08 15:34:39 leo Exp $
 #################################################################
 
 
@@ -460,7 +460,7 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
         if  float(myLog["dest size"]) != float(myLog['size']):
             SUCCESS = -1
             myLog["report-code"] = SUCCESS
-            myLog["detail"] ='Size mismatch: source='+myLog['size']+" dest="+myLog['dest size']
+            myLog["detail"] ='Size mismatch: source='+str(myLog['size'])+" dest="+str(myLog['dest size'])
         
     if not options.DRYRUN: writePhedexLog(myLog,logfile)
         
