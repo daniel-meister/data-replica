@@ -4,17 +4,18 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_utilities.py,v 1.4 2010/02/26 17:38:38 leo Exp $
+# $Id: cpt_utilities.py,v 1.5 2010/03/04 15:50:54 leo Exp $
 #################################################################
 
-
-### Alphabetic sorting in the first part of the results table
-### added  plotH2dFromStats to plot bar histograms of quantities reported in the tables
-### new format introduced for dirs: KEY1.LABEL1-KEY2.LABEL2-etc
+### dynamical precision writing in printWikiStats
+### first migration to a plugin structure
+### added sampleTitle header to printWikiStats
+### divided Date and hour in  splitDirName
+### added setCPTMode
 
 ### TODO:
 #### place an external flag on getHistoMaximum (for chosing norm/notNormalized)
-
+#### sensible sorting!!!!
 
 from sys import argv,exit
 from os import popen
@@ -153,7 +154,7 @@ def findPlotTogetherHisto(plotFilter, plotTogether, keys, toBePlotAlone, toBePlo
                 selected = True
                 break
         if not selected: continue
-          
+        
         together=False
         for sel in plotTogether:
             if not toBePlotTogether.has_key(sel): toBePlotTogether[sel] = []
@@ -184,7 +185,10 @@ def splitDirName(dirName, strippedText=""):
         else:
             label=""
             for i in range(1, len(comp)): label += comp[i]+"_"
-            output[comp[0]] = label[:-1]
+            if comp[0]=="Date": 
+                output[comp[0]] = label[:-5]
+                output["Hour"] = label[-5:-1]
+            else: output[comp[0]] = label[:-1]
     ###returns dirName if not in the right format
     if len(splittedDirName)<6 and not isKeyLabel: 
         return dirName
@@ -232,12 +236,14 @@ def computeStat(X):
 
 
 
-def printWikiStat(DIR_SUMMARY, posFilter, negFilter, legLabels):
+def printWikiStat(DIR_SUMMARY, posFilter, negFilter, legLabels, histoTitle=""):
     perc=0
     LABELS = []
 
     ###Creating header
     header = ""
+    if histoTitle!="":
+        print "|* "+ histoTitle+" *|"
     tasks = DIR_SUMMARY.keys()
     tasks.sort()
     for dir in tasks:
@@ -365,7 +371,11 @@ def printWikiStat(DIR_SUMMARY, posFilter, negFilter, legLabels):
                         else: line += "|  * _"+label+"_ *|"
                         for dir in tasks:
                             if DIR_SUMMARY[dir].has_key(label):
-                                line += " %.2f +- %.2f |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
+                                if DIR_SUMMARY[dir][label][0] <0.1:
+                                    line += " %.2e +- %.2e |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
+                                else:
+                                    line += " %.2f +- %.2f |" %(DIR_SUMMARY[dir][label][0], DIR_SUMMARY[dir][label][1])
+
                             else:
                                 line += " // |"
                         print line
@@ -406,8 +416,11 @@ def getMaxHistoRange(myH, histoRange):
 ### plots th2f from stats for summaryPlots.
 ### legendComposition is used to mark the different bins
 def plotHistoFromStats(histos2d, stats, summaryPlots, legendComposition, strippedText=""):
-    statsKeys = sorted(stats.keys())
+    statsKeys = stats.keys()
+    statsKeys.sort()
     for plot in summaryPlots:
+        ###plotting here errors makes no sense
+        if plot.find("Error") != -1: continue
         histos2d[plot] = histos2d[plot] =  ROOT.TH1F(plot,"",1,0,0)
         
         i=1
@@ -426,3 +439,220 @@ def plotHistoFromStats(histos2d, stats, summaryPlots, legendComposition, strippe
                 isFirst = False
                 i+=1
     
+
+
+### from hh:mm:ss to secs
+def translateTime(str):
+    seconds = 0
+    mult = 1
+    time = str.split(':')
+    i = 1
+    while i <= len(time):
+        seconds += float(time[-i])*mult
+        mult *=60
+        i +=1
+    return seconds
+
+
+### uhm... check how if fills
+def fillGraph(label, sampleName, single_Graph,  single_H, SINGLE_DIR_DATA, xQuantity):
+    print "Filling graph: "+ label
+    single_Graph[label] = ROOT.TGraphAsymmErrors()
+    if not SINGLE_DIR_DATA.has_key(label):
+        print "[WARNING]: "+label+" quantity not available"
+        exit
+    nIter = len( SINGLE_DIR_DATA[label] )
+    i=0
+    X = {}
+    while i<nIter: #for entry in SINGLE_DIR_DATA[label]:
+        j = 0
+        while j< len( SINGLE_DIR_DATA[label][i] ):
+            record = str(SINGLE_DIR_DATA[xQuantity][i][j])
+            if not X.has_key(record): X[record] = [] 
+            X[record].append( float(SINGLE_DIR_DATA[label][i][j]) )
+            
+            single_H[label].Fill(float(SINGLE_DIR_DATA[label][i][j]))
+            j += 1
+        i += 1
+            
+    sortedKeys = X.keys()
+    sortedKeys.sort(key=float)
+    j=0
+    for record in sortedKeys:
+        #if float(record)>MAX_GRAPH_X: continue
+        mean, sigma = computeStat(X[record])
+        single_Graph[label].SetPoint(j, float(record), mean)
+        single_Graph[label].SetPointError(j, 0, 0 , sigma, sigma )
+        j+=1
+    single_Graph[label].SetName( 'QUANT'+label+'-SAMPLE'+sampleName )
+    single_Graph[label].Write( 'QUANT'+label+'-SAMPLE'+sampleName);
+
+
+def printGraph(quant, graphs, graphCanvas, mGraph, legend, legLabel, samplePalette, PNG_NAME, xLabel=""):
+    graphCanvas[quant] = createCanvas(PNG_NAME+"-"+quant) 
+    legend[quant] = createLegend()
+    mGraph[quant] = ROOT.TMultiGraph()
+    #graphCanvas[quant].SetLogx()
+    #graphCanvas[quant].SetLogy()
+    i=0
+    for sample in graphs[quant].keys():
+        legend[quant].AddEntry(graphs[quant][sample],legLabel[sample] ,"l" )
+        ### set graph style
+        graphs[quant][sample].SetMarkerColor(samplePalette[sample])
+        graphs[quant][sample].SetLineColor(samplePalette[sample])
+        graphs[quant][sample].SetLineWidth(2)
+        graphs[quant][sample].SetMarkerStyle(20+i)
+        
+        mGraph[quant].Add( graphs[quant][sample])
+        i += 1
+
+    mGraph[quant].Draw("al")
+    mGraph[quant].GetXaxis().SetTitle(xLabel)
+    mGraph[quant].GetYaxis().SetTitle(quant)
+    #mGraph[quant].GetXaxis().SetRangeUser(0.000001,500)
+    ### uncomment the following line if you want to put a specific range on TGraph's Y axix
+    #if quant.find('ecs')!=-1:  mGraph[quant].GetYaxis().SetRangeUser(0.001,30)
+    mGraph[quant].Draw("al")
+    legend[quant].Draw()
+
+
+
+### this sets plot options/filter for a CPT working mode
+### possible modes are: SiteMon
+def setCPTMode(mode):
+    
+    if mode=="SiteMon":
+        PNG_NAME_FORMAT= ['Site',"Cfg"]
+        legendComposition = ['Date']     
+        sampleTitles = ["Site","Cfg"]
+        strippedText="" # this in case you want to remove some string from the set name
+        
+        ###filter quantities to be considered
+        filter = [
+            ".*read.*sec.*",
+            #".*read.*",
+            #    ".*open.*",
+            #   ".*seek.*",
+            "Time",
+            "Percentage",
+            "Error"#,
+            #"Actual",
+            #"dstat"
+            ]
+
+        negFilter = [
+            "TimeModule",
+            "TimeEvent",
+            "local",
+            ".*read.*m(in|ax).*",
+            ".*open.*m(in|ax).*"
+            ]
+        
+###filter quantities to be plotted
+        plotFilter = [  
+            "Actual",
+            #"readv-total-msecs",
+            "tstorage-read-total-msecs",
+            "Time_Delay",
+            "Percentage",
+            "UserTime",
+            "Error",
+            "dstat-CPU",
+            "dstat-DISK",
+            "dstat-NET",
+            "dstat-MEM"
+            #   "TimeModule"
+            ]
+### plot these quantities overlapped (excluded)
+        plotTogether = [
+            #"cache-read-total-megabytes",
+            #"TimeModule",
+            "readv-total-megabytes",
+            "read-total-megabytes",
+            "readv-total-msecs",
+            "read-total-msecs"
+            #"open-total-msecs",
+            ]
+        
+### they can not be in plotFilter?
+        summaryPlots =  (
+            "CpuPercentage",
+            "TimeJob_User",
+            "TimeJob_Exe",
+            "tstoragefile-read-total-msecs",
+            "Time_Delay",
+            "Error"
+            )
+        
+        doSummary = True
+
+    elif mode=="Default":
+        PNG_NAME_FORMAT= ['Site',"Cfg","Sw"]
+        legendComposition = ['Site','Cfg']     
+        sampleTitles = [""]
+        strippedText="" # this in case you want to remove some string from the set name
+        
+        ###filter quantities to be considered
+        filter = [
+            #    ".*read.*sec.*",
+            ".*read.*",
+            #    ".*open.*",
+            #   ".*seek.*",
+            "Time",
+            "Percentage",
+            "User",
+            "Error",
+            "Actual"#,
+            #"dstat"
+            ]
+
+        negFilter = [
+            "TimeModule",
+            "TimeEvent",
+            "local",
+            ".*read.*m(in|ax).*",
+            ".*open.*m(in|ax).*"
+            ]
+        
+###filter quantities to be plotted
+        plotFilter = [  
+            "Actual",
+            #"readv-total-msecs",
+            "read-total-msecs",
+            "Time_Delay",
+            "Percentage",
+            "UserTime",
+            "Error",
+            "dstat-CPU",
+            "dstat-DISK",
+            "dstat-NET",
+            "dstat-MEM"
+            #   "TimeModule"
+            ]
+### plot these quantities overlapped (excluded)
+        plotTogether = [
+            #"cache-read-total-megabytes",
+            #"TimeModule",
+            "readv-total-megabytes",
+            "read-total-megabytes",
+            "readv-total-msecs",
+            "read-total-msecs"
+            #"open-total-msecs",
+            ]
+        
+### they can not be in plotFilter?
+        summaryPlots =  (
+            "CpuPercentage",
+            "UserTime",
+            "ExeTime",
+            "tstoragefile-read-total-msecs",
+            "Time_Delay",
+            "Error"
+            )
+        
+        doSummary = True
+
+    else:
+        print "Mode "+mode+" does not exist"
+
+    return PNG_NAME_FORMAT,legendComposition,sampleTitles,filter,negFilter,plotFilter,plotTogether,summaryPlots,doSummary
