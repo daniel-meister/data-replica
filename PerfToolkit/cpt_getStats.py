@@ -4,11 +4,14 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getStats.py,v 1.6 2010/02/26 17:37:57 leo Exp $
+# $Id: cpt_getStats.py,v 1.7 2010/03/04 15:49:44 leo Exp $
 #################################################################
 
 # added plotting of bar histograms of summaryPlots
 # fixes according to new dir naming scheme supported
+# added sampleTitles variable
+# added setCPTMode
+# replotted errors
 
 ### TODO: make a nice check in plotting canvas based on plotFilter
 ###       use formatting for png filenames (SITE, etc...)
@@ -47,6 +50,8 @@ parser.add_option("--no-plots",action="store_false", dest="drawPlots", default=T
                   help="Do not draw plots")
 parser.add_option("--label",action="store", dest="Label", default="",
                   help="Label to be used in naming plots, etc")
+parser.add_option("--mode",action="store", dest="Mode", default="Default",
+                  help="Preconfigured modes for analysis: SiteMon, Default")
 
 (options, args) = parser.parse_args()
 
@@ -56,72 +61,26 @@ if len(args)<1:
     exit(1)
 
 
-###if you want to add a label to canvas names
-LABEL=options.Label
-#LABEL="QCDvsBB"
-###name prefix of png files
-PNG_NAME_FORMAT= ['Site',"Cfg","Setting","Label"]
-legendComposition = ["Set"] 
-#legendComposition = ["Site","Cfg","Dataset","Date"] 
-textOnCanvas = ["Site", "some label"] # unused
+### if you want to add a label to canvas names
+### sampleTitles stores the name of this sample, eg a T2_CH_CSCS measure with a certaing cfg. It will be used
+###     as histo title for sommaries and as header in the tables
+PNG_NAME_FORMAT,legendComposition,sampleTitles,filter,negFilter,plotFilter,plotTogether,summaryPlots,doSummary =  setCPTMode(options.Mode)
 strippedText="" # this in case you want to remove some string from the set name
 
+LABEL=options.Label
+PNG_NAME_FORMAT.append(LABEL)
+#LABEL="QCDvsBB"
+###name prefix of png files
+#PNG_NAME_FORMAT= ['Site',"Cfg",'Patch']
+#legendComposition = ['Cfg',"SE",'Patch'] 
+#PNG_NAME_FORMAT= ['Site',"Cfg",'Setting','Label']
+#legendComposition = ["NJobs"] 
+#PNG_NAME_FORMAT= ['Site',"Cfg"]
+#legendComposition = ['Date']     
+#sampleTitles = ["Site","Cfg"]
+#PNG_NAME_FORMAT= ['Site','Patch',"Cfg"]
+#legendComposition = ["Cfg","Patch","Set"] 
 
-###filter quantities to be considered
-filter = [
-    ".*read.*",
-#    ".*open.*",
-#   ".*seek.*",
-    "Time",
-    "Percentage",
-    "User",
-    "Error",
-    "Actual",
-    "Ifconfig"
-]
-
-negFilter = [
-    "TimeModule",
-    ".*read.*m(in|ax).*",
-    ".*open.*m(in|ax).*"
-    ]
-
-
-###filter quantities to be plotted
-plotFilter = [  
-   #"readv-total-msecs",
-   "read-total-msecs",
- #  "TimeEvent",
-   "Percentage",
-   "UserTime",
-   "Error"
-#   "TimeModule"
-   
-   ]
-
-### plot these quantities overlapped (excluded)
-plotTogether = [
-    #"cache-read-total-megabytes",
-    #"TimeModule",
-    "readv-total-megabytes",
-    "read-total-megabytes",
-    "readv-total-msecs",
-    "read-total-msecs"
-    #"open-total-msecs",
-    ]
-
-### they can not be in plotFilter?
-summaryPlots =  (
-"CpuPercentage",
-"UserTime",
-"ExeTime",
-"tstoragefile-read-total-msecs",
-"Ifconfig_MB",
-"Ifconfig_MBoverS"
-#"Error"
-)
-
-doSummary = True
 
 ### global drawing options
 drawOpt = "histo"
@@ -197,7 +156,6 @@ for file in sorted(fileList):
     sampleName = getHistos(listOfHistoKeys, histos, graphs, samplePalette, filter, negFilter)
     spName[sampleName] =  splitDirName(sampleName, strippedText)
 
-
 keys =  histos.keys()
 keys.sort()
 findPlotTogetherHisto(plotFilter, plotTogether, keys,  toBePlotAlone, toBePlotTogether)
@@ -227,7 +185,7 @@ for quant in keys:
                 if errLabel!="": 
                     if not mySTATS["Error"].has_key(errLabel): 
                         mySTATS["Error"][errLabel] = 0
-                    print errLabel, myH.GetBinContent(i+1)
+                    #print errLabel, myH.GetBinContent(i+1)
                     mySTATS["Error"][errLabel] = 100*round(myH.GetBinContent(i+1)/mySTATS["Failures"],1)
 
             #plotting the percentage of error over ALL jobs
@@ -259,6 +217,23 @@ for quant in keys:
             getMaxHistoRange(myH, xAxisRange[quant])
         
 
+### recreating error histograms
+ERROR_CODES = []
+for sample in STATS.keys():
+    for code in STATS[sample]['Error'].keys():
+        if not code in  ERROR_CODES: ERROR_CODES.append(code)
+ERROR_CODES = sorted(ERROR_CODES)
+ERROR_HISTOS = {}
+for sample in STATS.keys():
+    histos['Error'][sample].Delete()
+    histos['Error'][sample] = ROOT.TH1F('QUANTError-SAMPLE'+sample,sample,200,0,1)
+    for code in ERROR_CODES:
+        if len(STATS[sample]["Error"].keys())==0: continue
+        if STATS[sample]["Error"].has_key(code):
+            histos['Error'][sample].Fill(code, float(STATS[sample]['Error'][code]) )
+        else:
+            histos['Error'][sample].Fill(code, 0. )
+
 
 ### legend entries for each sample, needed also for Twiki stats
 legLabel = {}
@@ -272,7 +247,9 @@ for sample in sorted(spName.keys()):
             legLabel[sample] += spName[sample][x]+" "
 
 ### png filenames. takes info from spName only from the first sample
+### also setting histoTitle
 PNG_NAME=""
+histoTitle = ""
 sampleKey = spName.keys()[0]
 if isinstance(  spName[sampleKey], str):
     PNG_NAME = sampleKey
@@ -282,12 +259,14 @@ else:
             PNG_NAME+=spName[sampleKey][x]+"-"
         else: PNG_NAME += x+"-"
     PNG_NAME = PNG_NAME[:-1]
+    for x in sampleTitles:
+        if spName[sampleKey].has_key(x): histoTitle += spName[sampleKey][x]+" "
 
 
 
 
 ### printing statistics
-printWikiStat(STATS, "", ".*(min|max).*", legLabel)
+printWikiStat(STATS, "", ".*(min|max).*", legLabel, histoTitle)
 if not options.drawPlots: exit(0)
 
 if options.saveRoot: rootOutFile = ROOT.TFile.Open( PNG_NAME+".root","recreate")
@@ -374,44 +353,25 @@ for sel in toBePlotTogether.keys():
 
 ### plot graphs
 toPlot = False
-if "TimeEvent" in plotFilter: toPlot = True
+#if "TimeEvent" in plotFilter: toPlot = True
+#if "dstat" in plotFilter: toPlot = True
 
 graphCanvas = {}
 mGraph = {}
 for quant in graphs.keys():
-    if not toPlot: continue
-    graphCanvas[quant] = createCanvas(PNG_NAME+"-"+quant) 
-    legend[quant] = createLegend()
-    mGraph[quant] = ROOT.TMultiGraph()
-    graphCanvas[quant].SetLogx()
-    graphCanvas[quant].SetLogy()
-    i=0
-    for sample in graphs[quant].keys():
-        legend[quant].AddEntry(graphs[quant][sample],legLabel[sample] ,"p" )
-        ### set graph style
-        graphs[quant][sample].SetMarkerColor(samplePalette[sample])
-        graphs[quant][sample].SetLineColor(samplePalette[sample])
-        graphs[quant][sample].SetMarkerStyle(20+i)
+#    if not toPlot: continue
+    if quant.find("dstat")!=-1:
+        printGraph(quant, graphs, graphCanvas, mGraph, legend, legLabel, samplePalette, PNG_NAME, "seconds")
+        if options.savePng:
+            graphCanvas[quant].Update()
+            graphCanvas[quant].SaveAs(PNG_NAME+"-"+quant+".png") 
 
-        mGraph[quant].Add( graphs[quant][sample])
-        i += 1
-
-    mGraph[quant].Draw("ap")
-    mGraph[quant].GetXaxis().SetTitle("record")
-    mGraph[quant].GetYaxis().SetTitle(quant)
-    mGraph[quant].GetXaxis().SetRangeUser(0.000001,500)
-    ### uncomment the following line if you want to put a specific range on TGraph's Y axix
-    #if quant.find('ecs')!=-1:  mGraph[quant].GetYaxis().SetRangeUser(0.001,30)
-    mGraph[quant].Draw("ap")
-    legend[quant].Draw()
-    if options.savePng:
-        graphCanvas[quant].Update()
-        graphCanvas[quant].SaveAs(PNG_NAME+"-"+quant+".png") 
 
 
 
 ### plotting TimeModule producers timing stats
 if "TimeModule" in plotFilter: toPlot = True
+
 if toPlot:
     isFirst = True
     TimeModuleC = createCanvas(LABEL+cName+"-TimingModule")
@@ -449,10 +409,11 @@ viewCanvas["Overview"] = summaryPlots
 
 viewTCanvas = {}
 for c in viewCanvas.keys():
-   
+    ROOT.gStyle.SetCanvasDefH(800);
+    ROOT.gStyle.SetCanvasDefW(1200); 
     viewTCanvas[c] = createCanvas(PNG_NAME+"-"+c) 
-    ROOT.gPad.SetFillColor(0)
-    ROOT.gPad.SetBorderSize(0)
+    #ROOT.gPad.SetFillColor(0)
+    #ROOT.gPad.SetBorderSize(0)
 
     divideCanvas( viewTCanvas[c], len(viewCanvas[c]) )
     i=1
@@ -500,14 +461,31 @@ for c in viewCanvas.keys():
 
 histo_summary = {} 
 plotHistoFromStats(histo_summary, STATS, summaryPlots, legendComposition, strippedText)
-canvas_summary = {}
-ROOT.gStyle.SetPadBottomMargin(0.4)
+ROOT.gStyle.SetPadBottomMargin(0.2)
+ROOT.gStyle.SetPadLeftMargin(0.15)
+ROOT.gStyle.SetCanvasDefH(800);
+ROOT.gStyle.SetCanvasDefW(1200);
+
+canvas_summary =  createCanvas(PNG_NAME+"_summary")
+#{}
+divideCanvas( canvas_summary, len(histo_summary))
+cN=1
 for plot in histo_summary.keys():
-    histo_summary[plot].SetBarOffset(0.3)
+    canvas_summary.cd(cN)
+    ROOT.gStyle.SetPadLeftMargin(20)
+    cN += 1
+    histo_summary[plot].SetBarOffset(0.5)
+    histo_summary[plot].SetStats(0000000)
+    histo_summary[plot].GetYaxis().SetTitleOffset(1.7)
+    histo_summary[plot].GetXaxis().SetLabelSize(0.05)
+    histo_summary[plot].SetTitle(histoTitle)
     if options.saveRoot:  histo_summary[plot].Write()
     else:
-        canvas_summary[plot] = createCanvas(PNG_NAME+"-"+plot+"_summary")
+        #canvas_summary[plot] = createCanvas(PNG_NAME+"-"+plot+"_summary")
         histo_summary[plot].Draw("h e")
+if options.savePng:
+    canvas_summary.Update()
+    canvas_summary.SaveAs(PNG_NAME+cName+"-Summary.png") 
         
 if options.saveRoot: rootOutFile.Close()
 
