@@ -1,0 +1,14 @@
+<use name="DataFormats/EgammaCandidates">
+<use name="DataFormats/JetReco">
+<use name="DataFormats/MuonReco">
+<use name="DataFormats/TrackReco">
+<use name="FWCore/Framework">
+<use name="FWCore/ParameterSet">
+<use name="FWCore/ServiceRegistry">
+<use name="PhysicsTools/CandUtils">
+<use name="PhysicsTools/PatUtils">
+<use name="RecoJets/JetAlgorithms">
+<use name="SimDataFormats/GeneratorProducts">
+<use name="rootcore">
+<flags EDM_PLUGIN="1">
+
