@@ -4,12 +4,15 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.21 2010/02/08 15:34:39 leo Exp $
+# $Id: data_replica.py,v 1.22 2010/04/08 06:28:09 leo Exp $
 #################################################################
 
 
-# small bugfix in checking local dest file size
-# adding enable/disable flag for SE replication
+# modifying behaviour for CASTOR:
+#   - stager_get performed if FROM_SITE contains CASTOR
+#   - check of void lines in stager_get loop
+#   - stageing through rfcp done only when --castor-stage (bugfix)
+# not fully tested with --from_site T2_CH_CAF
 
 import os
 from os import popen, path, environ
@@ -94,7 +97,7 @@ usage = """usage: %prog [options] filelist.txt [dest_dir]
 
   * Copying files from CASTOR@CERN. This method works only from a lxplus machine, and takes profit from a
   temporary copy from CASTOR to $TMPDIR: this allows to avoid big waiting times. A prestaging request from
-  CASTOR is done before the copy starts:
+  CASTOR is tried before the copy starts through stager_get:
 
       data_replica.py --from-site T2_CH_CAF --to-site T3_CH_PSI filelist.txt /store/user/leo/testCastor4 --castor-stage
 
@@ -627,9 +630,11 @@ elif options.TOOL=='srmcp':
 
 
 ### CASTOR staging to disk, prestaging
-if options.CASTORSTAGE:
-    print "Prestaging files from CASTOR"
+#if options.CASTORSTAGE:
+if options.FROM_SITE.find("CASTOR")!=-1 or options.FROM_SITE.find("CAF")!=-1:
+    print "Prestaging files from CASTOR - stager_get"
     for lfn in list.readlines():
+        if lfn.strip().strip("\n")=="":  continue
         lfn = lfn.strip("\n").strip(" ").strip("\t")
         pfn = retrieve_pfn(lfn,options.FROM_SITE)
         command = "stager_get -M "+pfn.split("=")[1]
@@ -703,18 +708,17 @@ for lfn in list.readlines():
 
         ###Special case for user dir on castor
         ### file list is supposed to be in the form /castor/ (PFN)
-        if options.FROM_SITE=='CERN_CASTOR_USER':
-            local_pfn, exitStatus = castorStage(lfn,  myLog, options.logfile,1)
-            if exitStatus !=0 :
-                continue
-            entry = {"pfn":"file:///"+local_pfn,"node":options.FROM_SITE}
-            entry["size"] = popen("rfdir "+lfn+" | awk '{print $5}'").readlines()[0].strip("\n")
-
-            logTransferHeader(entry, pfn_DESTINATION, ADMIN_LOGFILE)                        
-            SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, False)
-            pipe = os.popen("rm "+local_pfn)
-            printDebug("CastorStaging: deleted "+local_pfn)
-                            
+        if ( options.FROM_SITE=='CERN_CASTOR_USER' or options.FROM_SITE=='T2_CH_CAF' ) and options.CASTORSTAGE:
+                local_pfn, exitStatus = castorStage(lfn,  myLog, options.logfile,1)
+                if exitStatus !=0 :
+                    continue
+                entry = {"pfn":"file:///"+local_pfn,"node":options.FROM_SITE}
+                entry["size"] = popen("rfdir "+lfn+" | awk '{print $5}'").readlines()[0].strip("\n")
+                
+                logTransferHeader(entry, pfn_DESTINATION, ADMIN_LOGFILE)                        
+                SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,options.logfile, False)
+                pipe = os.popen("rm "+local_pfn)
+                printDebug("CastorStaging: deleted "+local_pfn)
 
         elif options.usePDS:
             sources_list = arrange_sources(filelist,PREFERRED_SITES )
@@ -733,7 +737,10 @@ for lfn in list.readlines():
                 
 
         else:
-            pfn = retrieve_pfn(lfn,options.FROM_SITE)
+            if options.FROM_SITE=='CERN_CASTOR_USER':
+                pfn = "srm://srm-cms.cern.ch/srm/managerv2?SFN="+lfn
+            else:
+                pfn = retrieve_pfn(lfn,options.FROM_SITE)
             printDebug("PFN:"+ pfn)
             source = {"pfn":pfn,"node":options.FROM_SITE}
 
