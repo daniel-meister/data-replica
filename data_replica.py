@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.23 2010/05/03 15:16:18 leo Exp $
+# $Id: data_replica.py,v 1.24 2010/05/04 15:27:41 leo Exp $
 #################################################################
 
 
@@ -93,17 +93,19 @@ usage = """usage: %prog [options] filelist.txt [dest_dir]
 
       data_replica.py --from-site LOCAL --to-site T3_CH_PSI filelist.txt /store/user/leo/test1
 
-  * Copying files from CASTOR@CERN. This method works only from a lxplus machine, and takes profit from a
-  temporary copy from CASTOR to $TMPDIR: this allows to avoid big waiting times. A prestaging request from
-  CASTOR is tried before the copy starts through stager_get:
+  * Copying files registered to DBS from CASTOR@CERN:
 
-      data_replica.py --from-site T2_CH_CAF --to-site T3_CH_PSI filelist.txt /store/user/leo/testCastor4 --castor-stage
+      data_replica.py --from-site T2_CH_CAF --to-site T3_CH_PSI filelist.txt /store/user/leo/testCastor4 
 
-  * Copying files from user area under CASTOR@CERN. In this case, PFN are not retrievable from PhEDEx data service, so the file list
-  must contain Castor full path (/castor/cern.ch/....) and the source site is CERN_CASTOR_USER. Staging is available: 
+  * Copying files from user area under CASTOR@CERN (files not registered to DBS). In this case, PFN are not retrievable from PhEDEx data service,
+  so the file list must contain Castor full path (/castor/cern.ch/....) and the source site is CERN_CASTOR_USER:
   
-      data_replica.py --from-site CERN_CASTOR_USER --to-site T3_CH_PSI filelist.txt /store/user/leo/testCastor3 --castor-stage
+      data_replica.py --from-site CERN_CASTOR_USER --to-site T3_CH_PSI filelist.txt /store/user/leo/testCastor3 
 
+  * When copying from a Castor area from lxplus and you want to pre-stage files to a local /tmp directory through rfcp
+  (useful when copying files not accessed since long, avoiding srm timeouts), use --castor-stage.
+
+  
 Use the -h option for more information
 
 """
