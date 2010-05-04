@@ -4,15 +4,13 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.22 2010/04/08 06:28:09 leo Exp $
+# $Id: data_replica.py,v 1.23 2010/05/03 15:16:18 leo Exp $
 #################################################################
 
 
 # modifying behaviour for CASTOR:
-#   - stager_get performed if FROM_SITE contains CASTOR
-#   - check of void lines in stager_get loop
-#   - stageing through rfcp done only when --castor-stage (bugfix)
-# not fully tested with --from_site T2_CH_CAF
+#   - no stager_get anymore
+
 
 import os
 from os import popen, path, environ
@@ -628,18 +626,6 @@ if options.TOOL=='lcg-cp':
 elif options.TOOL=='srmcp':
     copyOptions = SRM_OPTIONS
 
-
-### CASTOR staging to disk, prestaging
-#if options.CASTORSTAGE:
-if options.FROM_SITE.find("CASTOR")!=-1 or options.FROM_SITE.find("CAF")!=-1:
-    print "Prestaging files from CASTOR - stager_get"
-    for lfn in list.readlines():
-        if lfn.strip().strip("\n")=="":  continue
-        lfn = lfn.strip("\n").strip(" ").strip("\t")
-        pfn = retrieve_pfn(lfn,options.FROM_SITE)
-        command = "stager_get -M "+pfn.split("=")[1]
-        pipe = os.popen(command)
-    print "Prestaging done"
 
 list.seek(0)
 for lfn in list.readlines():
