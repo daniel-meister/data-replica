@@ -4,13 +4,10 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getJobInfo.py,v 1.5 2010/03/04 15:50:28 leo Exp $
+# $Id: cpt_getJobInfo.py,v 1.6 2010/04/09 12:23:15 leo Exp $
 #################################################################
 
-
-### first inclusion of custom quantities in CMSSW reading functions
-### first migration to a plugin structure`
-
+### plugins moved to a directory
 
 
 import xml.dom.minidom
@@ -22,9 +19,7 @@ import re
 from optparse import OptionParser
 
 from cpt_utilities import *
-from cpt_CMSSW_plugin import *
-from cpt_SYS_plugin import *
-from cpt_CRAB_plugin import *
+from plugins import *
 
 
 ###max x-axis for graphs: ootherwise setting different ranges is difficult
@@ -51,7 +46,7 @@ parser = OptionParser(usage = usage)
 #parser.add_option("--no-auto-bin",action="store_true", dest="noAutoBin", default=False,
 #                  help="Automatic histo binning")
 parser.add_option("--type",action="store", dest="TYPE",default="CRAB",
-                  help="Type of the log/xml files, can be CRAB or CMSSW")
+                  help="Type of the log/xml files, can be CRAB,CMSSW,CMSSWCRAB")
 #parser.add_option("--stdout",action="store", dest="STDOUT",default="CMSSW",
 #                  help="Name type of stdout file. If your files are named e.g. my_1.stdout, my_2.stdout, ... put 'my'")
 #parser.add_option("--fjr",action="store", dest="FJR",default="crab_fjr",
@@ -73,8 +68,8 @@ else:
 
 
 ### Values are: StorageTiming, CrabTiming, Timing, EventTiming, ModuleTiming, ProducerTiming
-#acceptedSummaries = ['StorageTiming', "CrabTiming", "Timing","ProducerTiming"]
-acceptedSummaries = ['StorageTiming', "CrabTiming" ]
+acceptedSummaries = ['StorageTiming', "CrabTiming", "Timing","ProducerTiming"]
+#acceptedSummaries = ['StorageTiming', "CrabTiming" ,"ProducerTiming"]
 
 
 ###discard the first event in histo filling
@@ -212,24 +207,28 @@ def getJobStatistics(LOGDIR,OUTFILE):
     spDirName = splitDirName(LOGDIR)
     
     OUTFILE = LOGDIR.strip('/').split("/")[-1]+'.root' 
-        
+       
+    print " "
     print "OutFile:",OUTFILE
     print "Analyzing "+LOGDIR
 
     #totalFiles = 0
     ###Parsing Files
-    logdir = LOGDIR+"/res/"
+    CRAB_LOGDIR = LOGDIR+"/res/"
     ### use stdout or xml for both?
-    if options.TYPE == "CRAB": LOGS = os.popen("ls "+logdir+"*.stdout")
+    if options.TYPE == "CRAB": LOGS = os.popen("ls "+CRAB_LOGDIR+"*.stdout")
     elif  options.TYPE == "CMSSW": LOGS = os.popen("ls "+LOGDIR+"/*.xml")
+    elif options.TYPE == "CMSSWCRAB": LOGS = os.popen("ls "+CRAB_LOGDIR+"CMSSW*.stdout")
     else: 
-        print "[ERROR No valit log/xml file given]"
+        print "[ERROR] No valid log/xml file given"
         exit(1)
     for x in LOGS:
         #Parse crabDir
         x = x.strip('\n')
         if options.TYPE == "CRAB": rValue = parseDir_Crab(LOGDIR, x, acceptedSummaries)
         elif  options.TYPE == "CMSSW": rValue = parseDir_CMSSW( x, acceptedSummaries)
+        elif  options.TYPE == "CMSSWCRAB": rValue = parseDir_CMSSWCrab( LOGDIR, x, 'cmssw', acceptedSummaries)
+
         
         if rValue!=1: job_output = rValue
         else: continue
@@ -279,7 +278,6 @@ def getJobStatistics(LOGDIR,OUTFILE):
                 if not label in ['TimeEvent_record','TimeEvent_run','TimeEvent_event']:
                     LABELS.append(label)
         #end label cycle
-        
         if job_output["Success"]==True: SUMMARY["Success"] +=1
         else: SUMMARY["Failures"] +=1
         
@@ -300,7 +298,6 @@ def getJobStatistics(LOGDIR,OUTFILE):
         label="Error"
         single_H[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName,sampleName,200,0,1)
         for err in SUMMARY[label].keys():
-            #if SUMMARY["Total"]!=0:
             single_H[label].Fill(err, float(SUMMARY[label][err])) #/float(SUMMARY["Total"]) )
             
         if float(SUMMARY["Success"])==0:
@@ -331,17 +328,29 @@ def getJobStatistics(LOGDIR,OUTFILE):
             elif isinstance( SINGLE_DIR_DATA[label] , list):
                 isListOfList = False
                 for entry in SINGLE_DIR_DATA[label]:
-                    if isinstance( entry , float) or isinstance( entry , str):  single_H[label].Fill( float(entry) )
+                    if isinstance( entry , float) or isinstance( entry , str):  
+                        single_H[label].Fill( float(entry) )
                     elif isinstance( entry , list): 
                         isListOfList = True
                         break
                     else:
                         print "[WARNING]: I don't know how to process this info: "+label
                 if isListOfList:
-                    if label.find("dstat")!=-1: 
-                        fillGraph(label, sampleName, single_Graph, single_H, SINGLE_DIR_DATA, "dstat-Seconds")
-                    #else: 
-                    #    print "[WARNING]: I don't know how to process this info: "+label
+                    xlabel=""
+                    if label.find("dstat")!=-1:       xlabel = "WN_dstat-Seconds"
+                    elif label.find("vmstat")!=-1:    xlabel = "WN_vmstat-Seconds"
+                    elif label.find("TimeEvent")!=-1: xlabel = "TimeEvent_record"
+                    elif label.find("net")!=-1:       xlabel = 'WN_net-Seconds'
+                    else:
+                        print "[WARNING] please provide an x quantity for "+label+". Not plotting."
+                        continue
+                    
+                    ### which plot you want also divided by single jobs (overlapped)?
+                    saveSingleJobGraphs = False
+                    rebin = 10
+                    if label.find("Event")!=-1: rebin=1
+                    if label.find("net")!=-1: saveSingleJobGraphs=True
+                    fillGraph(label, sampleName, single_Graph, single_H, SINGLE_DIR_DATA, xlabel,rebin,saveSingleJobGraphs )
             else:
                 print "[WARNING]: not a float, not an array, not a string: label="+label
     
@@ -351,7 +360,7 @@ def getJobStatistics(LOGDIR,OUTFILE):
         ### Producers statistics
         if "ProducerTiming" in acceptedSummaries:
             for label in LABELS:
-                if label.find("TimeModule")==-1: continue ##these are plotted separately
+                if label.find("TimeModule")==-1 : continue ##these are plotted separately
                 if label.find("event")!=-1 or label.find("record")!=-1: continue
                 
                 prod_H2[label] = ROOT.TH1F('QUANT'+label+'-SAMPLE'+sampleName, sampleName, 100, 0, 1)
