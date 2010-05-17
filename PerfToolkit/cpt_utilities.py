@@ -4,14 +4,9 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_utilities.py,v 1.5 2010/03/04 15:50:54 leo Exp $
+# $Id: cpt_utilities.py,v 1.6 2010/04/09 12:27:02 leo Exp $
 #################################################################
 
-### dynamical precision writing in printWikiStats
-### first migration to a plugin structure
-### added sampleTitle header to printWikiStats
-### divided Date and hour in  splitDirName
-### added setCPTMode
 
 ### TODO:
 #### place an external flag on getHistoMaximum (for chosing norm/notNormalized)
@@ -22,7 +17,7 @@ from os import popen
 import re
 import ROOT
 from math import sqrt
-
+from array import array
 
 def divideCanvas(canvas, numberOfHisto):
     if numberOfHisto <=3:
@@ -55,7 +50,8 @@ def createLegend():
 
 def setHisto(histo, color, lineStyle,title,Xtitle, rebin):
     histo.Sumw2()
-    histo.Rebin(rebin)
+    if histo.GetNbinsX() >1:
+        histo.Rebin(rebin)
     histo.SetLineWidth(3)
     histo.SetStats(0000000)
     histo.SetTitle("")
@@ -83,6 +79,7 @@ def getHistos(listOfKeys, histos, graphs, sitePalette, posFilter, negFilter=""):
             if not sitePalette.has_key(SAMPLE): 
                 if len(sitePalette)>0: myColor = sorted(sitePalette.values())[-1] +1 
                 else: myColor=1
+                if myColor==10: myColor+=1 ###don't want white
                 sitePalette[SAMPLE] = myColor
 
             toPlot = False
@@ -100,12 +97,12 @@ def getHistos(listOfKeys, histos, graphs, sitePalette, posFilter, negFilter=""):
                         break
 
             if not toPlot: continue
-                    
+
             if  obj.IsA().InheritsFrom("TGraph"):
                 if not graphs.has_key(QUANT):
                     graphs[QUANT] = {}
                 graphs[QUANT][SAMPLE] = obj
-
+         
             else:
                 if not histos.has_key(QUANT):
                     histos[QUANT] = {}
@@ -116,7 +113,8 @@ def getHistos(listOfKeys, histos, graphs, sitePalette, posFilter, negFilter=""):
 
 def getMaxHeightHisto(firstLabel, histo, histoName, maxY, quant="", goodHistoList=""):
     ###if empty, exit
-    if histo.Integral() == 0: return firstLabel, maxY
+    if histo.Integral() == 0: 
+        return firstLabel, maxY
     
     maxBin =  histo.GetMaximumBin()
     if histo.GetName().find("Error")==-1:
@@ -141,7 +139,33 @@ def getMaxHeightHisto(firstLabel, histo, histoName, maxY, quant="", goodHistoLis
     return firstLabel, maxY
 
 
+def doRebin(histo, wantedBinWidth):
+    nBins = histo.GetNbinsX()
+    ### msecs and time histos has 10 secs bin width (see crab_getJobstatistics.py)
+    binWidth = histo.GetBinWidth(1) 
+    histoName = histo.GetName()
 
+    ### msecs to secs conversion
+    if histoName.find('msecs') !=-1: binWidth /= 1000
+    rebin = 1
+    ratio=1.5
+
+    if binWidth < wantedBinWidth:
+        ratio = float(wantedBinWidth)/float(binWidth)
+    ### if no bin width given or no valid ratio, stick to std minima
+    if nBins % ratio == 0:
+        rebin = int(ratio)
+    else:
+        nMaxBins = 100
+        if histo.GetName().find('msecs')!=-1 or histo.GetName().find('Time')!=-1:
+            nMaxBins = 1000
+        if nBins>nMaxBins:
+            if nBins%nMaxBins == 0:
+                rebin = int(nBins/nMaxBins)
+            
+    if rebin > 1:  histo.Rebin( rebin )
+        
+       
 
 def findPlotTogetherHisto(plotFilter, plotTogether, keys, toBePlotAlone, toBePlotTogether):
     compiledFilters = []
@@ -172,8 +196,10 @@ def findPlotTogetherHisto(plotFilter, plotTogether, keys, toBePlotAlone, toBePlo
 # - none of the above: the dir name is returned as a string
 def splitDirName(dirName, strippedText=""):
     output = {}
-    if strippedText!="" and dirName.find(strippedText)!=-1:
-        dirName = dirName.replace(strippedText,"")
+    if strippedText!="": 
+        for st in strippedText:
+            if dirName.find(st)!=-1:
+                dirName = dirName.replace(st,"")
     splittedDirName = dirName.split("-")
     isKeyLabel = True
     for comp in splittedDirName:
@@ -430,7 +456,9 @@ def plotHistoFromStats(histos2d, stats, summaryPlots, legendComposition, strippe
             splittedTaskName = splitDirName(task, strippedText)
             if isinstance(splittedTaskName, str): taskLabel = splittedTaskName
             else:
-                for leg in legendComposition: taskLabel += splittedTaskName[leg]+"-"
+                for leg in legendComposition: 
+                    if splittedTaskName.has_key(leg):
+                        taskLabel += splittedTaskName[leg]+"-"
                 taskLabel = taskLabel[:-1]
             if plot in stats[task]:
                 histos2d[plot].Fill(taskLabel, stats[task][plot][0])
@@ -455,37 +483,110 @@ def translateTime(str):
 
 
 ### uhm... check how if fills
-def fillGraph(label, sampleName, single_Graph,  single_H, SINGLE_DIR_DATA, xQuantity):
-    print "Filling graph: "+ label
+### Multigraphs for net plotting (one plot per job)
+def fillGraph(label, sampleName, single_Graph,  single_H, SINGLE_DIR_DATA, xQuantity, rebin=1, multiGraphs=False):
     single_Graph[label] = ROOT.TGraphAsymmErrors()
     if not SINGLE_DIR_DATA.has_key(label):
         print "[WARNING]: "+label+" quantity not available"
         exit
     nIter = len( SINGLE_DIR_DATA[label] )
     i=0
-    X = {}
+    Y = {}
     while i<nIter: #for entry in SINGLE_DIR_DATA[label]:
+        newLabel=0
+        if multiGraphs:
+            if not SINGLE_DIR_DATA.has_key("internal_jobNumber"):
+                print "[WARNING] No job number info available"
+            else:
+                jobNumber = SINGLE_DIR_DATA["internal_jobNumber"][i]
+                newLabel = label+"-jobnumber"+str( int(jobNumber))
+                if not single_Graph.has_key(newLabel): 
+                    single_Graph[newLabel] = ROOT.TGraphAsymmErrors()
+                    single_Graph[newLabel].SetName( 'QUANT'+newLabel+'-SAMPLE'+sampleName )
+                
         j = 0
+        reX = 0#array('f')
+        reY = 0#array('f')
+        nextStep = 0
         while j< len( SINGLE_DIR_DATA[label][i] ):
             record = str(SINGLE_DIR_DATA[xQuantity][i][j])
-            if not X.has_key(record): X[record] = [] 
-            X[record].append( float(SINGLE_DIR_DATA[label][i][j]) )
+            if not Y.has_key(record): Y[record] = [] 
+            Y[record].append( float(SINGLE_DIR_DATA[label][i][j]) )
             
             single_H[label].Fill(float(SINGLE_DIR_DATA[label][i][j]))
+
+            if multiGraphs:
+                single_Graph[newLabel].SetPoint(j, float(record),float(SINGLE_DIR_DATA[label][i][j]))
+            
             j += 1
+        
+        if multiGraphs: single_Graph[newLabel].Write( 'QUANT'+newLabel+'-SAMPLE'+sampleName )
         i += 1
             
-    sortedKeys = X.keys()
+    sortedKeys = Y.keys()
     sortedKeys.sort(key=float)
     j=0
+    reX=0
+    reY=0
+    sumY=0
+    sumYW2=0
+    sumY2=0
+    errY=0
+    nextStep=0
+    sumW2=0
+    final_reY = 0
+    useWeights = True
+    #TEMPORARY SOLUTION: if there are measures with errors and not(why? dunno), if the error is too small use simple error computation
+    #if sigma=0 means it is a single measure
     for record in sortedKeys:
         #if float(record)>MAX_GRAPH_X: continue
-        mean, sigma = computeStat(X[record])
-        single_Graph[label].SetPoint(j, float(record), mean)
-        single_Graph[label].SetPointError(j, 0, 0 , sigma, sigma )
+        mean, sigma = computeStat(Y[record])
+        #if label.find("TimeEvent")!=-1: print "MEAN,SIGMA: ",label, record,mean, sigma
+        x = float(record)
+        if rebin>1:
+            if j==nextStep:
+                if j!=0:
+                    newJ = int(float(j)/float(rebin))
+                    if sumW2!=0 and useWeights: 
+                        errY = sqrt(1./sumW2)
+                    else:
+                        reY = sumY/float(rebin)
+                        errY = sumY2/float(rebin) - reY*reY
+                        if errY>0: errY = sqrt( errY )
+                    #if label.find("RX_kBs")!=-1: print "--", newJ, reX, reY, errY, sumY
+                    single_Graph[label].SetPoint(newJ, reX, reY)
+                    single_Graph[label].SetPointError(newJ, 0, 0 , errY, errY )
+            
+                reX=0
+                reY=0
+                sumY=0
+                sumY2 = 0
+                sumW2 = 0
+                errY=0
+                nextStep+=rebin
+            reX += x/float(rebin)
+            if sigma>0 and not useWeights:
+                sumYW2 += mean/(sigma*sigma)
+                sumW2 += 1./(sigma*sigma)
+            
+            useWeights=False
+            reY +=mean
+            sumY2 += mean*mean
+            sumY += mean
+            #if label.find("RX_kBs")!=-1:print mean, sumY
+         
+
+       #print sumW2
+
+        else:    
+            #if label.find("TimeEvent")!=-1:            print label, record,mean, sigma
+            single_Graph[label].SetPoint(j, float(record), mean)
+            single_Graph[label].SetPointError(j, 0, 0 , sigma, sigma )
         j+=1
+      
     single_Graph[label].SetName( 'QUANT'+label+'-SAMPLE'+sampleName )
-    single_Graph[label].Write( 'QUANT'+label+'-SAMPLE'+sampleName);
+    single_Graph[label].Write( 'QUANT'+label+'-SAMPLE'+sampleName)
+    
 
 
 def printGraph(quant, graphs, graphCanvas, mGraph, legend, legLabel, samplePalette, PNG_NAME, xLabel=""):
@@ -496,14 +597,22 @@ def printGraph(quant, graphs, graphCanvas, mGraph, legend, legLabel, samplePalet
     #graphCanvas[quant].SetLogy()
     i=0
     for sample in graphs[quant].keys():
-        legend[quant].AddEntry(graphs[quant][sample],legLabel[sample] ,"l" )
+        myLegend = sample
+        if legLabel.has_key(sample): myLegend = legLabel[sample]
+        myColor = i+1
+        if samplePalette.has_key(sample): myColor = samplePalette[sample]
+        legend[quant].AddEntry(graphs[quant][sample],myLegend ,"l" )
+        
         ### set graph style
-        graphs[quant][sample].SetMarkerColor(samplePalette[sample])
-        graphs[quant][sample].SetLineColor(samplePalette[sample])
+        graphs[quant][sample].SetMarkerColor( myColor )
+        graphs[quant][sample].SetLineColor( myColor)
         graphs[quant][sample].SetLineWidth(2)
         graphs[quant][sample].SetMarkerStyle(20+i)
-        
+
+        #rebinGraph( graphs[quant][sample],2)
         mGraph[quant].Add( graphs[quant][sample])
+
+
         i += 1
 
     mGraph[quant].Draw("al")
@@ -512,81 +621,18 @@ def printGraph(quant, graphs, graphCanvas, mGraph, legend, legLabel, samplePalet
     #mGraph[quant].GetXaxis().SetRangeUser(0.000001,500)
     ### uncomment the following line if you want to put a specific range on TGraph's Y axix
     #if quant.find('ecs')!=-1:  mGraph[quant].GetYaxis().SetRangeUser(0.001,30)
-    mGraph[quant].Draw("al")
+    #mGraph[quant].Draw("al")
     legend[quant].Draw()
+
+
+
 
 
 
 ### this sets plot options/filter for a CPT working mode
 ### possible modes are: SiteMon
 def setCPTMode(mode):
-    
-    if mode=="SiteMon":
-        PNG_NAME_FORMAT= ['Site',"Cfg"]
-        legendComposition = ['Date']     
-        sampleTitles = ["Site","Cfg"]
-        strippedText="" # this in case you want to remove some string from the set name
-        
-        ###filter quantities to be considered
-        filter = [
-            ".*read.*sec.*",
-            #".*read.*",
-            #    ".*open.*",
-            #   ".*seek.*",
-            "Time",
-            "Percentage",
-            "Error"#,
-            #"Actual",
-            #"dstat"
-            ]
-
-        negFilter = [
-            "TimeModule",
-            "TimeEvent",
-            "local",
-            ".*read.*m(in|ax).*",
-            ".*open.*m(in|ax).*"
-            ]
-        
-###filter quantities to be plotted
-        plotFilter = [  
-            "Actual",
-            #"readv-total-msecs",
-            "tstorage-read-total-msecs",
-            "Time_Delay",
-            "Percentage",
-            "UserTime",
-            "Error",
-            "dstat-CPU",
-            "dstat-DISK",
-            "dstat-NET",
-            "dstat-MEM"
-            #   "TimeModule"
-            ]
-### plot these quantities overlapped (excluded)
-        plotTogether = [
-            #"cache-read-total-megabytes",
-            #"TimeModule",
-            "readv-total-megabytes",
-            "read-total-megabytes",
-            "readv-total-msecs",
-            "read-total-msecs"
-            #"open-total-msecs",
-            ]
-        
-### they can not be in plotFilter?
-        summaryPlots =  (
-            "CpuPercentage",
-            "TimeJob_User",
-            "TimeJob_Exe",
-            "tstoragefile-read-total-msecs",
-            "Time_Delay",
-            "Error"
-            )
-        
-        doSummary = True
-
-    elif mode=="Default":
+    if mode=="Default":
         PNG_NAME_FORMAT= ['Site',"Cfg","Sw"]
         legendComposition = ['Site','Cfg']     
         sampleTitles = [""]
@@ -594,65 +640,88 @@ def setCPTMode(mode):
         
         ###filter quantities to be considered
         filter = [
-            #    ".*read.*sec.*",
-            ".*read.*",
-            #    ".*open.*",
-            #   ".*seek.*",
+            ".*read.*sec.*",
             "Time",
             "Percentage",
-            "User",
-            "Error",
-            "Actual"#,
-            #"dstat"
+            "Error"
             ]
-
         negFilter = [
+            "Time_Delay",
             "TimeModule",
             "TimeEvent",
             "local",
             ".*read.*m(in|ax).*",
             ".*open.*m(in|ax).*"
             ]
-        
 ###filter quantities to be plotted
         plotFilter = [  
-            "Actual",
-            #"readv-total-msecs",
             "read-total-msecs",
-            "Time_Delay",
-            "Percentage",
+            "CMSSW_CpuPercentage",
             "UserTime",
-            "Error",
-            "dstat-CPU",
-            "dstat-DISK",
-            "dstat-NET",
-            "dstat-MEM"
-            #   "TimeModule"
+            "Error"
             ]
 ### plot these quantities overlapped (excluded)
         plotTogether = [
-            #"cache-read-total-megabytes",
-            #"TimeModule",
             "readv-total-megabytes",
             "read-total-megabytes",
             "readv-total-msecs",
             "read-total-msecs"
-            #"open-total-msecs",
             ]
-        
 ### they can not be in plotFilter?
-        summaryPlots =  (
-            "CpuPercentage",
-            "UserTime",
-            "ExeTime",
-            "tstoragefile-read-total-msecs",
-            "Time_Delay",
-            "Error"
-            )
-        
+        summaryPlots =  [
+            "CMSSW_CpuPercentage",
+            "TimeJob_User",
+            "TimeJob_Exe",
+            "tstoragefile-read-total-msecs"#,
+            #"Error"
+            ]
         doSummary = True
 
+    elif mode.find("SiteMon")!=-1:
+        PNG_NAME_FORMAT,legendComposition,sampleTitles,filter,negFilter,plotFilter,plotTogether,summaryPlots,doSummary = setCPTMode("Default")
+        PNG_NAME_FORMAT= ['Site',"Cfg"]
+        legendComposition = ["Sw",'Date']     
+        sampleTitles = ["Site","Cfg"]
+        strippedText="" 
+
+    elif  mode.find("SiteCfr")!=-1 :
+        PNG_NAME_FORMAT,legendComposition,sampleTitles,filter,negFilter,plotFilter,plotTogether,summaryPlots,doSummary = setCPTMode("Default")
+        PNG_NAME_FORMAT= ['Site',"Cfg"]
+        legendComposition = ["Site","Sw",'Date']     
+        sampleTitles = ["Site","Cfg"]
+        strippedText="" 
+        #summaryPlots.append("Time_Delay")
+
+    elif mode.find("CfgCfr")!=-1:
+        PNG_NAME_FORMAT,legendComposition,sampleTitles,filter,negFilter,plotFilter,plotTogether,summaryPlots,doSummary = setCPTMode("Default")
+        PNG_NAME_FORMAT= ['Site',"Cfg"]
+        legendComposition = ["Cfg","Sw","Label"]     
+        sampleTitles = ["Site"]
+        filter.append(".*read.*num.*")
+        strippedText="" 
+        #summaryPlots.append("Time_Delay")
     else:
         print "Mode "+mode+" does not exist"
+    
+    ### extending modes
+    if mode=="SiteMonExt" or mode=="SiteCfrExt" or mode=="CfgCfrExt":
+        filter.append("TimeEvent")
+        filter.append(".*read.*byte.*")
+        plotFilter.append("TimeEvent")
+        negFilter.remove("TimeEvent")
+        filter.append("net-.*RX")
+        plotFilter.append("net-.*RX")
+        filter.append("stat-CPU")
+        plotFilter.append("stat-CPU")
+        filter.append("stat-DISK_Read")
+        plotFilter.append("stat-DISK_Read")
+        #filter.append("stat-MEM")
+        #plotFilter.append("stat-MEM")
+
+    #if mode.find("CfgCfrExt")!=-1:
+    #    plotFilter.remove("Error")
+    #    summaryPlots.remove("Error")
+
+        
 
     return PNG_NAME_FORMAT,legendComposition,sampleTitles,filter,negFilter,plotFilter,plotTogether,summaryPlots,doSummary

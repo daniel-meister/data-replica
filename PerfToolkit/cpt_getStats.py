@@ -4,14 +4,9 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getStats.py,v 1.7 2010/03/04 15:49:44 leo Exp $
+# $Id: cpt_getStats.py,v 1.8 2010/04/09 12:22:36 leo Exp $
 #################################################################
 
-# added plotting of bar histograms of summaryPlots
-# fixes according to new dir naming scheme supported
-# added sampleTitles variable
-# added setCPTMode
-# replotted errors
 
 ### TODO: make a nice check in plotting canvas based on plotFilter
 ###       use formatting for png filenames (SITE, etc...)
@@ -51,7 +46,7 @@ parser.add_option("--no-plots",action="store_false", dest="drawPlots", default=T
 parser.add_option("--label",action="store", dest="Label", default="",
                   help="Label to be used in naming plots, etc")
 parser.add_option("--mode",action="store", dest="Mode", default="Default",
-                  help="Preconfigured modes for analysis: SiteMon, Default")
+                  help="Preconfigured modes for analysis: SiteMon, SiteMonExt,SiteCfrExt, Default")
 
 (options, args) = parser.parse_args()
 
@@ -65,7 +60,7 @@ if len(args)<1:
 ### sampleTitles stores the name of this sample, eg a T2_CH_CSCS measure with a certaing cfg. It will be used
 ###     as histo title for sommaries and as header in the tables
 PNG_NAME_FORMAT,legendComposition,sampleTitles,filter,negFilter,plotFilter,plotTogether,summaryPlots,doSummary =  setCPTMode(options.Mode)
-strippedText="" # this in case you want to remove some string from the set name
+strippedText=["RHAUTO_", "CMSSW_"] # this in case you want to remove some string from the set name
 
 LABEL=options.Label
 PNG_NAME_FORMAT.append(LABEL)
@@ -84,34 +79,6 @@ PNG_NAME_FORMAT.append(LABEL)
 
 ### global drawing options
 drawOpt = "histo"
-
-def doRebin(histo, wantedBinWidth):
-    nBins = histo.GetNbinsX()
-    ### msecs and time histos has 10 secs bin width (see crab_getJobstatistics.py)
-    binWidth = histo.GetBinWidth(1) 
-    histoName = histo.GetName()
-
-    ### msecs to secs conversion
-    if histoName.find('msecs') !=-1: binWidth /= 1000
-    rebin = 1
-    ratio=1.5
-
-    if binWidth < wantedBinWidth:
-        ratio = float(wantedBinWidth)/float(binWidth)
-    ### if no bin width given or no valid ratio, stick to std minima
-    if nBins % ratio == 0:
-        rebin = int(ratio)
-    else:
-        nMaxBins = 100
-        if histo.GetName().find('msecs')!=-1 or histo.GetName().find('Time')!=-1:
-            nMaxBins = 1000
-        if nBins>nMaxBins:
-            if nBins%nMaxBins == 0:
-                rebin = int(nBins/nMaxBins)
-            
-    if rebin > 1:  histo.Rebin( rebin )
-        
-            
 
 
 fileList = []
@@ -180,16 +147,15 @@ for quant in keys:
             else:
                 mySTATS["Success"]  =  histos["CpuPercentage"][sample].Integral() #- STATS[sample]["Failures"] 
 
+            Total = float(mySTATS["Success"])+ float(mySTATS["Failures"])
             for i in range(myH.GetNbinsX()):
                 errLabel = myH.GetXaxis().GetBinLabel(i+1)
                 if errLabel!="": 
                     if not mySTATS["Error"].has_key(errLabel): 
                         mySTATS["Error"][errLabel] = 0
                     #print errLabel, myH.GetBinContent(i+1)
-                    mySTATS["Error"][errLabel] = 100*round(myH.GetBinContent(i+1)/mySTATS["Failures"],1)
-
+                    mySTATS["Error"][errLabel] = 100*round(myH.GetBinContent(i+1)/Total,3)
             #plotting the percentage of error over ALL jobs
-            Total = mySTATS["Success"]+ mySTATS["Failures"]
             if Total!=0:
                 myF = ROOT.TF1("myF",str(Total),0,2000)
                 myH.Divide(myF)
@@ -244,7 +210,8 @@ for sample in sorted(spName.keys()):
       
     else:
         for x in legendComposition:
-            legLabel[sample] += spName[sample][x]+" "
+            if spName[sample].has_key(x):
+                legLabel[sample] += spName[sample][x]+" "
 
 ### png filenames. takes info from spName only from the first sample
 ### also setting histoTitle
@@ -352,53 +319,44 @@ for sel in toBePlotTogether.keys():
 
 
 ### plot graphs
-toPlot = False
-#if "TimeEvent" in plotFilter: toPlot = True
-#if "dstat" in plotFilter: toPlot = True
-
 graphCanvas = {}
 mGraph = {}
+singleJobGraphs = {}
+singleJobGraphsCanvas = {}
+mSingleJobGraphs = {}
 for quant in graphs.keys():
 #    if not toPlot: continue
-    if quant.find("dstat")!=-1:
-        printGraph(quant, graphs, graphCanvas, mGraph, legend, legLabel, samplePalette, PNG_NAME, "seconds")
-        if options.savePng:
-            graphCanvas[quant].Update()
-            graphCanvas[quant].SaveAs(PNG_NAME+"-"+quant+".png") 
-
-
-
-
-### plotting TimeModule producers timing stats
-if "TimeModule" in plotFilter: toPlot = True
-
-if toPlot:
-    isFirst = True
-    TimeModuleC = createCanvas(LABEL+cName+"-TimingModule")
-    TimeModuleL = createLegend()
-    TimeModule_H  = {}
-
-for sample in STATS.keys():
-    if not toPlot: continue
-
-    TimeModule_H[sample]  = ROOT.TH1F(sample+"-TimeModule","",10,0,1)
-    for quant in STATS[sample].keys():
-        if quant.find("TimeModule")==-1: continue
-        bin = TimeModule_H[sample].Fill(quant[len("TimeModule_"):], STATS[sample][quant][0])
-        TimeModule_H[sample].SetBinError(bin,STATS[sample][quant][1] )
-        TimeModule_H[sample].SetLineColor(  samplePalette[sample] )
-#setHisto(TimeModule_H[sample] , samplePalette[sample], 1 ,"",sel, 1 )
-        #firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][histo], histo, maxY, quant, goodHistos[quant])
-    if isFirst:
-        TimeModule_H[sample].DrawNormalized(drawOpt)
-        isFirst = False
+    x_label = ""
+    if quant.find("stat")!=-1: x_label = "seconds"
+    elif  quant.find("TimeEvent")!=-1:  x_label = "record"
     else:
-       TimeModule_H[sample].DrawNormalized(drawOpt+" sames")
-   
-if toPlot:
+        "[WARNING] please provide an x label for " +quant+", using default one"
+        x_label = "seconds"
+        
+    if quant.find("jobnumber")!=-1:
+        for sample in graphs[quant].keys():
+            if not spName[sample].has_key("Site"):
+                print "[WARNING] No Site key in the sample, please provide it or change the line below this comment."
+                break
+            findLabel =  quant.find("jobnumber")
+            newSampleName = spName[sample]["Site"]+"-"+quant[:findLabel-1]
+            newQuantName  = quant[ findLabel:]
+            sampleLabel =""
+            for l in legendComposition:
+                if spName[sample].has_key(l):
+                    sampleLabel += "-"+spName[sample][l]
+            newSampleName += sampleLabel
+            if not singleJobGraphs.has_key(newSampleName): singleJobGraphs[newSampleName] = {}
+            singleJobGraphs[ newSampleName ][newQuantName] = graphs[quant][sample]
+    else:
+        printGraph(quant, graphs, graphCanvas, mGraph, legend, legLabel, samplePalette, PNG_NAME, x_label)
     if options.savePng:
-        TimeModuleC.Update()
-        TimeModuleC.SaveAs(PNG_NAME+"-TimingModule.png") 
+        graphCanvas[quant].Update()
+        graphCanvas[quant].SaveAs(PNG_NAME+"-"+quant+".png") 
+
+
+for quant in singleJobGraphs.keys():
+    printGraph(quant, singleJobGraphs, singleJobGraphsCanvas, mSingleJobGraphs, legend, legLabel, samplePalette, "", x_label)
 
 
 #Print grand view
@@ -412,9 +370,7 @@ for c in viewCanvas.keys():
     ROOT.gStyle.SetCanvasDefH(800);
     ROOT.gStyle.SetCanvasDefW(1200); 
     viewTCanvas[c] = createCanvas(PNG_NAME+"-"+c) 
-    #ROOT.gPad.SetFillColor(0)
-    #ROOT.gPad.SetBorderSize(0)
-
+ 
     divideCanvas( viewTCanvas[c], len(viewCanvas[c]) )
     i=1
     for quant in viewCanvas[c]:
@@ -435,6 +391,7 @@ for c in viewCanvas.keys():
             firstLabel, maxY = getMaxHeightHisto( firstLabel, histos[quant][h], h,  maxY, quant )
             histos[quant][h].SetLineWidth(2)
             legend[quant].AddEntry(histos[quant][h],legLabel[h] ,"l" )
+            
         i+=1
 
         if firstLabel == (): continue
@@ -467,7 +424,6 @@ ROOT.gStyle.SetCanvasDefH(800);
 ROOT.gStyle.SetCanvasDefW(1200);
 
 canvas_summary =  createCanvas(PNG_NAME+"_summary")
-#{}
 divideCanvas( canvas_summary, len(histo_summary))
 cN=1
 for plot in histo_summary.keys():
