@@ -37,7 +37,7 @@ process.MessageLogger.cerr.FwkReport.reportEvery = 100
 
 process.AdaptorConfig = cms.Service("AdaptorConfig",
                                     tempDir=cms.untracked.string(""),
-                                    cacheHint=cms.untracked.string("lazy-download"),
+                                    cacheHint=cms.untracked.string("application-only"),
                                     readHint=cms.untracked.string("auto-detect"))
 process.source.cacheSize = cms.untracked.uint32(20*1024*1024)
 
