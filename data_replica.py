@@ -4,12 +4,11 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.24 2010/05/04 15:27:41 leo Exp $
+# $Id: data_replica.py,v 1.25 2010/05/04 15:32:50 leo Exp $
 #################################################################
 
 
-# modifying behaviour for CASTOR:
-#   - no stager_get anymore
+# check on proxy lifetime (>1h)
 
 
 import os
@@ -590,6 +589,16 @@ pipe = os.popen("voms-proxy-info")
 if pipe.close()!=None:
     print "Please create a voms-proxy before using this program: voms-proxy-init -voms cms"
     exit(1)
+
+proxy_timeleft = os.popen("voms-proxy-info -timeleft").readlines()
+if int(proxy_timeleft[0]) < 3600:
+    print "Your proxy will last for less than an hour, please renew it with: voms-proxy-init -voms cms"
+    exit(1)
+else:
+    print "Your proxy will last "+str( round( float(proxy_timeleft[0])/3600,1) )+" hours, if you think you'll need more time please renew it."
+    
+
+            
 
 printDebug("phedex-like logfile: "+ options.logfile)
 
