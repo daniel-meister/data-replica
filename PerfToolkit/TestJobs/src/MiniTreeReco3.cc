@@ -13,7 +13,7 @@
 //
 // Original Author:  Leonardo Sala (ETH) [leo]
 //         Created:  Thu Feb 11 14:19:13 CET 2010
-// $Id$
+// $Id: MiniTreeReco3.cc,v 1.1 2010/04/21 21:57:44 leo Exp $
 //
 //
 
@@ -30,7 +30,7 @@
 
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 
-#include "FWCore/ParameterSet/interface/InputTag.h"
+#include "FWCore/Utilities/interface/InputTag.h"
 
 #include "SimDataFormats/GeneratorProducts/interface/GenEventInfoProduct.h"
 
