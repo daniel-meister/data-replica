@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.25 2010/05/04 15:32:50 leo Exp $
+# $Id: data_replica.py,v 1.26 2010/05/27 08:32:51 leo Exp $
 #################################################################
 
 
@@ -510,7 +510,7 @@ def parseErrorLog(error_log):
 
     init = error_log.find("SRM_FAILURE")
     if init != -1:
-        new_error_log = "("+error_log[init:error_log.find("explanation")], error_log[error_log.find("state"):error_log.find("srm://")]+")"
+        new_error_log = "("+error_log[init:error_log.find("explanation")]+" "+error_log[error_log.find("state"):error_log.find("srm://")]+")"
     else:
         new_error_log = "("+error_log.replace("\n"," ")+")" 
         
