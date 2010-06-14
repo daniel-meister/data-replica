@@ -4,17 +4,12 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.27 2010/06/07 15:46:17 leo Exp $
+# $Id: data_replica.py,v 1.28 2010/06/14 12:37:27 leo Exp $
 #################################################################
 
-### TO BE TESTED!
-# added LCG_OPTIONS_COMMON for every lcg command OK
-# deletion if file exist at destination but differs in size OK
-# new function: filename, pfn_DESTINATION = createDestFileName(lfn, options, DESTINATION)
-# added user, date in logfile name
-# moved to a module-like structure, allowing to be included in other programs
-# returns or the number of failed transfers or -1 (e.g. wrong options) or 0 (all successes)
-# introduced local-global variables
+# fixed bug in dest file check. Added a warning in destinatio check in the options
+# added check on local destination (must be e.g. like file:////tmp/)
+
 
 import os
 from os import popen, path, environ, getpid
@@ -150,7 +145,7 @@ if __name__ == "__main__":
     
     parser.add_option("--delete",
                       action="store_true", dest="DELETE", default=False,
-                      help="If file exists at destination and its size is _smaller_ than the source one, delete it.")
+                      help="If file exists at destination and its size is _smaller_ than the source one, delete it. WARNING: destination files are checked only for SRM endpoints.")
     
     (moptions, args) = parser.parse_args()
     moptions.Replicate = ENABLE_REPLICATION
@@ -430,6 +425,8 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
         checkFileExist = -1
         ### checking file existance only for SRM destinations
         if dest.find('srm://')!=-1: destSize = getFileSizeLCG(dest)
+        else:
+            destSize = -1
         ### if no file at dest, copy
         if destSize==-1:
             pipe = popen(command)
@@ -487,6 +484,8 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
             else: myLog["dest size"] = os.stat( dest[len('file:///'):].strip()).st_size
         else:
             myLog["dest size"] = getFileSizeLCG(dest)
+
+        print  myLog["dest size"], myLog['size']
 
         if  float(myLog["dest size"]) != float(myLog['size']):
             SUCCESS = -1
@@ -757,6 +756,10 @@ def data_replica(args, moptions):
 
             ### creating the destination PFN
             filename, pfn_DESTINATION = createDestFileName(lfn, options, DESTINATION)
+            ### local dest check
+            if pfn_DESTINATION.find("file:/")!=-1 and  pfn_DESTINATION.find("file:////")==-1:
+                 printOutput( "Error in local destination, must be e.g. in this form: file:////tmp/",1,ADMIN_LOGFILE)
+                 exit(1)
             srm_prot = ""
             if PROTOCOL == "srmv2": srm_prot = "-2"
 
