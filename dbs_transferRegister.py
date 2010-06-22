@@ -5,7 +5,11 @@
 #
 # API Unit tests for the DBS JavaServer.
 import sys,os
-from DBSAPI.dbsApi import DbsApi
+try:
+    from DBSAPI.dbsApi import DbsApi
+except:
+    print "DBSAPI cannot be loaded... have you set up CMSSW environment?"
+    sys.exit(1)
 from DBSAPI.dbsException import *
 from DBSAPI.dbsApiException import *
 #from DBSAPI.dbsOptions import DbsOptionParser
@@ -40,6 +44,7 @@ myparser.add_option("--to-site",action="store", dest="TO_SITE",default="",
 
 ### Checking CMSSW env
 testCMSSW = os.getenv("CMSSW_BASE")
+print "CMSSW env is set to "+ testCMSSW
 if testCMSSW is None:
     print "CMSSW env is not set, exiting..."
     exit(1)
@@ -90,7 +95,7 @@ def createFileTxt(fileList):
     print fileName
     return fileName
 
-class drOptions():
+class drOptions:
     usePDS = False
     Replicate = True
     RECREATE_SUBDIRS = False
@@ -99,14 +104,9 @@ class drOptions():
     TOOL='lcg-cp'
     DRYRUN = False
     pass
-    
+
 def addBlockReplica(api,BLOCK, SE):
     try:
-        #optManager  = DbsOptionParser()
-        #(opts,args) = optManager.getOpt()
-        #opts.instance = 'cms_dbs_ph_analysis_02'
-        #opts.url = 'https://cmsdbsprod.cern.ch:8443/cms_dbs_ph_analysis_02_writer/servlet/DBSServlet'
-        #api = DbsApi(opts.__dict__)
         print "Adding block "+BLOCK+" to SE "+SE
         block = DbsFileBlock (
             Name=BLOCK
@@ -124,8 +124,15 @@ def dbs_transferRegister(DATASET, TO_SITE):
     myBlocks = getDatasetBlockList(api, DATASET)
 
     if myBlocks!=1:
+        totalDatasetSize = 0
+        for block in myBlocks:
+            totalDatasetSize += block['BlockSize']
+
+        print "Dataset Size: "+ str(totalDatasetSize/(1024*1024*1024)) +" GB"
+
         for block in myBlocks:
             print "\n------- Copying block: "+ block['Name']
+            print "Block Size: "+str( float(block['BlockSize'])/(1024*1024*1024))+" GB"
             logfile = "data_replica_"+str(os.getpid())+".log"
             fileList = getBlockListFile(api,DATASET,block['Name'])
             fileName = createFileTxt( fileList)
