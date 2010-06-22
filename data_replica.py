@@ -4,11 +4,10 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.28 2010/06/14 12:37:27 leo Exp $
+# $Id: data_replica.py,v 1.29 2010/06/14 15:39:27 leo Exp $
 #################################################################
 
-# fixed bug in dest file check. Added a warning in destinatio check in the options
-# added check on local destination (must be e.g. like file:////tmp/)
+# small bug fix in writing the failed transfers logfile
 
 
 import os
@@ -485,12 +484,11 @@ def copyFile(tool,copyOptions, source,  dest, srm_prot, myLog, logfile, isStage)
         else:
             myLog["dest size"] = getFileSizeLCG(dest)
 
-        print  myLog["dest size"], myLog['size']
-
         if  float(myLog["dest size"]) != float(myLog['size']):
             SUCCESS = -1
             myLog["report-code"] = SUCCESS
-            myLog["detail"] ='Size mismatch: source='+str(myLog['size'])+" dest="+str(myLog['dest size'])
+            error_log += 'Size mismatch: source='+str(myLog['size'])+" dest="+str(myLog['dest size'])
+            myLog["detail"] = error_log
         
     if not options.DRYRUN: writePhedexLog(myLog,logfile)
         
@@ -819,7 +817,7 @@ def data_replica(args, moptions):
             if SUCCESS != 0:
                 if myLog['detail'].find('File exist')!=-1:
                     writeLog(EXISTING_LOGFILE,lfn+" "+myLog['to-pfn']+"\n")
-                elif myLog['detail'].find('file does not exist')==-1 and myLog['detail'].find('no replicas')==1:
+                elif myLog['detail'].find('file does not exist')==-1 and myLog['detail'].find('no replicas')==-1:
                 ### does not consider existing file as error...
                     writeLog(FAILED_LOGFILE,lfn+"\n")
                     failedTransfers+=1
