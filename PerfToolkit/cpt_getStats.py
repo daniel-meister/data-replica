@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: cpt_getStats.py,v 1.8 2010/04/09 12:22:36 leo Exp $
+# $Id: cpt_getStats.py,v 1.9 2010/05/17 13:06:37 leo Exp $
 #################################################################
 
 
@@ -350,15 +350,17 @@ for quant in graphs.keys():
             singleJobGraphs[ newSampleName ][newQuantName] = graphs[quant][sample]
     else:
         printGraph(quant, graphs, graphCanvas, mGraph, legend, legLabel, samplePalette, PNG_NAME, x_label)
-    if options.savePng:
-        graphCanvas[quant].Update()
-        graphCanvas[quant].SaveAs(PNG_NAME+"-"+quant+".png") 
-
-
+        if options.savePng:
+            graphCanvas[quant].Update()
+            graphCanvas[quant].SaveAs(PNG_NAME+"-"+quant+".png") 
+            
+            
 for quant in singleJobGraphs.keys():
     printGraph(quant, singleJobGraphs, singleJobGraphsCanvas, mSingleJobGraphs, legend, legLabel, samplePalette, "", x_label)
-
-
+    if options.savePng:
+        singleJobGraphsCanvas[quant].Update()
+        singleJobGraphsCanvas[quant].SaveAs(PNG_NAME+"-"+quant+".png")
+                                            
 #Print grand view
 if not doSummary: popen("sleep 6000000000")
 
