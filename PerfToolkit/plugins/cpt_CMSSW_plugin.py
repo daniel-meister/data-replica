@@ -191,7 +191,7 @@ def parseDir_CMSSW(logname, acceptedSummaries,netLogFile=""):
             
             ### is different from "" when called from another plugin
             if netLogFile=="": 
-                lognum = logFile.split("/")[1].split("_")[1].split(".")[0]
+                lognum = logFile.split("/")[-1].split("_")[1].split(".")[0]
                 job_output["internal_jobNumber"] = int(lognum)
                 netLogFile = xmlFile.replace(".xml",".log")
                 netLogFile = netLogFile.replace( base_logname, base_logname+"_net"  )
