@@ -24,9 +24,21 @@ def parseDir_CMSSWCrab(LOGDIR, subdir, cmsswOutName, acceptedSummaries):
     logdir = LOGDIR+"/res/"
     lognum =  subdir[subdir.find("res/CMSSW"):].split("_")[1].split(".")[0]
     log_file =  logdir+"CMSSW_"+str(lognum)+".stdout"
-    #the final '_1' is due to CRAB numbering
-    xml_file_cmssw = logdir+cmsswOutName+"_"+str(lognum)+"_1.xml"
-    net_file =  logdir+"cmssw_net_"+lognum+"_1.log"
+
+    ###CRAB numberig scheme changed since 2.7.3
+    tmpList = os.popen("ls "+logdir+cmsswOutName+"_"+str(lognum)+"_*.xml").readlines()
+    if len(tmpList)==0:
+        print "[ERROR]: no xml_file or too many files recognized, please check it"
+        return 1
+    else:
+        xml_file_cmssw = tmpList[0].strip('\n')
+
+    tmpList = os.popen("ls "+logdir+"cmssw_net_"+lognum+"_*.log").readlines()
+    if len(tmpList)==0:
+        print "[ERROR]: no net_file or too many files recognized, please check it"
+        return 1
+    else:
+        net_file = tmpList[0].strip('\n')
 
     ### submission time from crab.log
     time_submit = getSubmitTime_Crab(LOGDIR)
