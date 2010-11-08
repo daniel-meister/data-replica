@@ -1,13 +1,13 @@
-#!/bin/env python
+1#!/bin/env python
 #################################################################
 # data_replica.py
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.29 2010/06/14 15:39:27 leo Exp $
+# $Id: data_replica.py,v 1.30 2010/06/22 15:52:53 leo Exp $
 #################################################################
 
-# small bug fix in writing the failed transfers logfile
+# updated for the new CMS webservices (https)
 
 
 import os
@@ -194,7 +194,7 @@ def retrieve_siteList(lfn,entry):
     if len(lfn)<2:
         print "[ERROR] NO VALID LFN!!!"
         return 1
-    command = """wget -O- \"http://cmsweb.cern.ch/phedex/datasvc/xml/prod/FileReplicas?lfn="""+lfn+"""\"  2>/dev/null"""
+    command = """wget --no-check-certificate -O- \"https://cmsweb.cern.ch/phedex/datasvc/xml/prod/FileReplicas?lfn="""+lfn+"""\"  2>/dev/null"""
     out = popen(command)
     init = 0
     for x in out:
@@ -239,11 +239,15 @@ def retrieve_pfn(lfn,site):
     if site=='LOCAL':
         pfn = "file:///"+lfn
     else:
-        command = "wget -O- \"http://cmsweb.cern.ch/phedex/datasvc/xml/prod/lfn2pfn?node="+site+"&protocol="+PROTOCOL+"&lfn="+lfn+"""\" 2>/dev/null |sed -e \"s/.*pfn='\([^']*\).*/"""+r"\1\n"+"""/\" """
+        command = "wget --no-check-certificate -O- \"https://cmsweb.cern.ch/phedex/datasvc/xml/prod/lfn2pfn?node="+site+"&protocol="+PROTOCOL+"&lfn="+lfn+"""\" 2>/dev/null |sed -e \"s/.*pfn='\([^']*\).*/"""+r"\1\n"+"""/\" """
         out = popen(command)
         for x in out:
             pfn = x.strip("\n")
-
+            
+    if len(pfn) <1:
+        print "[ERROR] NO VALID PFN!!!"
+        return 1
+                    
     #printDebug(pfn)
     return pfn
 
