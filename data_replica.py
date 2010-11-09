@@ -1,10 +1,10 @@
-1#!/bin/env python
+#!/bin/env python
 #################################################################
 # data_replica.py
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.30 2010/06/22 15:52:53 leo Exp $
+# $Id: data_replica.py,v 1.31 2010/11/08 18:51:44 leo Exp $
 #################################################################
 
 # updated for the new CMS webservices (https)
