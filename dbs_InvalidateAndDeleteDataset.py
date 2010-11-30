@@ -139,7 +139,7 @@ for site in SITES:
         popen("sleep 10")
         ### get the pfn string
         lfnRoot = fileList[0][:fileList[0].rfind("/")]
-        command = "wget -O- \"http://cmsweb.cern.ch/phedex/datasvc/xml/prod/lfn2pfn?node="+site+"&protocol=srmv2&lfn="+lfnRoot+"\" 2>/dev/null |sed -e \"s/.*pfn='\([^']*\).*/"""+r"\1\n"+"""/\" 2>/dev/null"""
+        command = "wget --no-check-certificate -O- \"https://cmsweb.cern.ch/phedex/datasvc/xml/prod/lfn2pfn?node="+site+"&protocol=srmv2&lfn="+lfnRoot+"\" 2>/dev/null |sed -e \"s/.*pfn='\([^']*\).*/"""+r"\1\n"+"""/\" 2>/dev/null"""
         pfnRoot = popen(command).readlines()[0].strip('\n')
         ### looping over files
         failedDeletions = 0
