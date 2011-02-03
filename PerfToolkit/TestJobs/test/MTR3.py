@@ -5,7 +5,7 @@ process = cms.Process("miniTreeReco")
 process.load("FWCore.MessageService.MessageLogger_cfi")
 process.MessageLogger.cerr.threshold = "WARNING"
 
-process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(10000) )
+process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(10) )
 
 process.source = cms.Source("PoolSource",
 #                            # replace 'myfile.root' with the source file you want to use
@@ -13,12 +13,8 @@ process.source = cms.Source("PoolSource",
 #                                                        
 )
 
-process.source.fileNames = []
-mf = open("file.list")
-for i in mf:
-     i = i.strip("\n")
-     process.source.fileNames.append(i)
-
+process.load("Configuration.StandardSequences.FrontierConditions_GlobalTag_cff")
+process.GlobalTag.globaltag = 'START310_V4::All'
 
 
 process.demo = cms.EDAnalyzer('MiniTreeReco3',
