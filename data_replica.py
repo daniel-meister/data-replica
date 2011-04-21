@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.31 2010/11/08 18:51:44 leo Exp $
+# $Id: data_replica.py,v 1.32 2010/11/09 07:53:26 leo Exp $
 #################################################################
 
 # updated for the new CMS webservices (https)
@@ -765,6 +765,8 @@ def data_replica(args, moptions):
             srm_prot = ""
             if PROTOCOL == "srmv2": srm_prot = "-2"
 
+            isFileAtSource = True  ## keeps track if the file exist at source
+
             ###Special case for user dir on castor
             ### file list is supposed to be in the form /castor/ (PFN)
             if ( options.FROM_SITE=='CERN_CASTOR_USER' or options.FROM_SITE=='T2_CH_CAF' ) and options.CASTORSTAGE:
@@ -782,8 +784,9 @@ def data_replica(args, moptions):
                 sources_list = arrange_sources(filelist,PREFERRED_SITES )
                 if sources_list == []:
                     printOutput( "ERROR: no replicas found",0,ADMIN_LOGFILE)
+                    isFileAtSource=False
                     writeLog(NOREPLICA_LOGFILE,lfn+"\n")
-                    continue
+                    #continue
     
                 for entry in sources_list:
                     logTransferHeader(entry, pfn_DESTINATION, ADMIN_LOGFILE)
@@ -804,19 +807,23 @@ def data_replica(args, moptions):
                     source["size"] =  getFileSizeLCG(pfn )#out[0].strip("\n")
                     if source["size"]==-1:
                         printOutput( "[ERROR] file does not exist on source", 0, ADMIN_LOGFILE)
+                        isFileAtSource=False
                         writeLog(NOREPLICA_LOGFILE,myLog["lfn"]+'\n')
-                        continue
+                        #continue
                 else:
                     ###Using lfn, as in this case is the full path
                     if not os.path.isfile(lfn):
                         printOutput( "[ERROR] file does not exist on source",0,ADMIN_LOGFILE)
                         writeLog(NOREPLICA_LOGFILE,myLog["lfn"]+'\n')
-                        continue
+                        isFileAtSource=False
+                        #continue
                     source["size"] = str(os.path.getsize(lfn))
                 
-
-                logTransferHeader(source,pfn_DESTINATION, ADMIN_LOGFILE)
-                SUCCESS, error_log = copyFile(options.TOOL, copyOptions, source, pfn_DESTINATION, srm_prot, myLog, DATAREPLICA_LOGFILE, options.CASTORSTAGE)
+                if isFileAtSource:    
+                    logTransferHeader(source,pfn_DESTINATION, ADMIN_LOGFILE)
+                    SUCCESS, error_log = copyFile(options.TOOL, copyOptions, source, pfn_DESTINATION, srm_prot, myLog, DATAREPLICA_LOGFILE, options.CASTORSTAGE)
+                else:
+                    SUCCESS=1
 
             if SUCCESS != 0:
                 if myLog['detail'].find('File exist')!=-1:
@@ -847,3 +854,4 @@ if __name__ == "__main__":
 
 
 
+    
