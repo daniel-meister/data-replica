@@ -13,10 +13,62 @@ from DBSAPI.dbsApiException import *
 from dbs_utils import *
 #from dbs_transferRegister import getSeName, getDatasetBlockList
 
+
+def deleteReplicaFromBlock(self, block, storage_element):
+    try:
+        #Calling the Implementation function
+        from dbsApiDeleteReplicaFromBlock import dbsApiImplDeleteReplicaFromBlock
+        return  dbsApiImplDeleteReplicaFromBlock(self, block, storage_element)
+    except Exception, ex:
+        if (isinstance(ex,DbsApiException) or isinstance(ex,SAXParseException)):
+            raise ex
+        else:
+            raise DbsApiException(args="Unhandled Exception: "+str(ex), code="5991")
+
+
+def query_yes_no(question, default="yes"):
+    """Ask a yes/no question via raw_input() and return their answer.
+    
+    question is a string that is presented to the user.
+    default is the presumed answer if the user just hits <Enter>.
+    It must be yes (the default), no or None (meaning
+    an answer is required of the user).
+    
+    The answer return value is one of yes or no.
+    """
+    valid = {"yes":True,   "y":True,  "ye":True,
+             "no":False,     "n":False}
+    if default == None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+    
+    while 1:
+        sys.stdout.write(question + prompt)
+        choice = raw_input().lower()
+        if default is not None and choice == '':
+            return valid[default]
+        elif choice in valid.keys():
+            return valid[choice]
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
+            
+
+
 usage = """Usage: """+argv[0]+""" [--dbs=ph01|ph02] [--all] [--site=TX_YY_SITE] dataset
 
 If --all is used, the the dataset will be unregistered and deleted from ALL the sites. Otherwise,
-it will only be deleted and invalidated from the site specified in --site
+it will only be deleted and invalidated from the site specified in --site.
+
+The invalidation is actually done through the DBSInvalidateDataset.py provided by CRAB [*]. If you
+just want to invalidate a dataet, but not to delete the data from the SE, try to use this tool instead.
+
+[*]
+https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideCrabForPublication?redirectedfrom=CMS.SWGuideCrabForPublication#Invalidate_a_dataset_in_DBS
 """ 
 
 myparser = OptionParser(usage = usage, version="")
@@ -25,28 +77,21 @@ myparser.add_option("--dbs",action="store", dest="DBS",default="ph02",
 myparser.add_option("--all",action="store_true", dest="ALL",default=False,
                   help="Delete the sample from all the sites, and invalidate the dataset")
 myparser.add_option("--site",action="store", dest="SITE",default="",
-                  help="Delete and invalidate the sample from this site. ")
-myparser.add_option("--invalidate",action="store_true", dest="INVALIDATE",default=False,
-                  help="Invalidate the dataset")
-myparser.add_option("--delete",action="store_true", dest="DELETE",default=False,
-                    help="Delete the dataset, both physically and from DBS (just the replica information)")
+                  help="""Delete the sample from this site, both physically and from DBS (just the replica information. If the dataset is 
+                  available at other sites, it is still VALID in DBS). """)
 myparser.add_option("--debug",action="store_true", dest="DEBUG",default=False,
                     help="Verboooose")
 
-
-
-
 (options, args) = myparser.parse_args()
+
+
 if len(args)==0:
-    print "Please give a dataset name"
+    print usage
+    print "\n[ERROR] Please give a dataset name"
     exit(1)
     
-if not options.INVALIDATE and not options.DELETE:
-    print "Please select --invalidate or --delete"
-    exit(1)
-if options.INVALIDATE and (options.SITE!="" or options.ALL):
-    print "--invalidate _invalidates_ the dataset, does not delete anything. Thus, --site or --all makes no sense here. NB it uses the DBSInvalidateDataset.py utility shipped with CRAB"
-elif options.SITE=="" and options.ALL==False:
+###Options sanity check
+if options.SITE=="" and options.ALL==False:
     print "Select one site targeted for deletion and invalidation or --all to delete and invalidate from all sites. Exiting."
     exit(1)
 elif options.SITE!="" and options.ALL!=False:
@@ -54,21 +99,33 @@ elif options.SITE!="" and options.ALL!=False:
     exit(1)
 
 
-### Checking CMSSW env
-testCMSSW = getenv("CMSSW_BASE")
+### Checking CMSSW env and version
+testCMSSW = getenv("CMSSW_VERSION")
 if testCMSSW is None:
-    print "CMSSW env is not set, exiting..."
+    print "[ERROR] CMSSW env is not set, exiting..."
     exit(1)
 
+IS_CMSSW4 = True
+CMSSW_major = testCMSSW[ len("CMSSW_"): len("CMSSW_")+1]
+if float(CMSSW_major) <4:
+    IS_CMSSW4 = False
+    #print "[ERROR] This release of "+argv[0]+" only works for CMSSW_4_X_Y"
+    #exit(1)
+    
 ### CRAB env (this is one of the vars I was able to find, eg CRABPATH is not "export"ed)
 testCRAB = getenv("CRABLIBPYTHON")
 if testCRAB is None:
-    print "CRAB env is not set, exiting..."
+    print "[ERROR] CRAB env is not set, exiting..."
     exit(1)
-            
+
+### checks existance of proxy
+pipe = os.popen("voms-proxy-info")
+if pipe.close()!=None:
+    print "[ERROR] Grid Proxy not found. Please create a voms-proxy before using this program: voms-proxy-init -voms cms"
+    exit(-1)
+                            
 
 DATASET=args[0]
-
 DBS_SERVER = {"ph01":"https://cmsdbsprod.cern.ch:8443/cms_dbs_ph_analysis_01_writer/servlet/DBSServlet",
               "ph02":"https://cmsdbsprod.cern.ch:8443/cms_dbs_ph_analysis_02_writer/servlet/DBSServlet"}
 
@@ -79,15 +136,16 @@ opts = dbsOpts()
 opts.instance = 'cms_dbs_ph_analysis_02'
 opts.url = DBS_SERVER[options.DBS]
 api = DbsApi(opts.__dict__)
-        
+
+
 
 ### Invalidate the daatset (--invalidate only)
-if options.INVALIDATE:
-    print "----- Invalidating dataset"
-    command = "DBSInvalidateDataset.py --DBSURL="+DBS_SERVER[options.DBS]+" --datasetPath="+DATASET+" --files"
-    out = popen(command).readlines()
-    if out!=[]: print out
-    exit(1)        
+#if options.INVALIDATE:
+#    print "----- Invalidating dataset"
+#    command = "DBSInvalidateDataset.py --DBSURL="+DBS_SERVER[options.DBS]+" --datasetPath="+DATASET+" --files"
+#    out = popen(command).readlines()
+#    if out!=[]: print out
+#    exit(1)        
 
 ## finding sites
 SITES = []
@@ -130,64 +188,84 @@ Blocks = getDatasetBlockList(api, DATASET)
 
 failedFiles = []
 
+
+###recap and ask for confirmation
+recap_text = "";
+print "\n############# ACTIONS YOU HAVE SELECTED"
+   
 for site in SITES:
     ### continue if not the selected site
     if options.SITE!="" and site!=options.SITE: continue
+    recap_text += "----- Removing files from "+site+" and relative DBS entry\n"
 
-    if options.DELETE:
-        print "----- Removing files from "+site+" in 10 seconds, press CTRL-C for killing the process"
-        popen("sleep 10")
-        ### get the pfn string
-        lfnRoot = fileList[0][:fileList[0].rfind("/")]
-        command = "wget --no-check-certificate -O- \"https://cmsweb.cern.ch/phedex/datasvc/xml/prod/lfn2pfn?node="+site+"&protocol=srmv2&lfn="+lfnRoot+"\" 2>/dev/null |sed -e \"s/.*pfn='\([^']*\).*/"""+r"\1\n"+"""/\" 2>/dev/null"""
-        pfnRoot = popen(command).readlines()[0].strip('\n')
-        ### looping over files
-        failedDeletions = 0
-        print "Deletion in progress..."
-        for f in fileList:
-            newF = f.replace(lfnRoot,pfnRoot)
-            command = "srmrm "+newF
-            if options.DEBUG: print command
-            out = popen(command).readlines()
-            if out!=[]:
-                print "### Error "
-                print out
-                for o in out:
-                    ### simple error check
-                    if o.find("No such file")!=-1:
-                        alreadyDeleted = True
-                        break
-                if not alreadyDeleted:
-                    failedDeletions +=1
-                    failedFiles.append(newF)
+if options.ALL:
+    recap_text += "----- ALL the copies will be deleted, and the dataset INVALIDATED in dbs"
+print recap_text
+print "#############\n "
+answer = query_yes_no("Are you sure to continue?","no")
+if answer != True:
+    print "Exiting..."
+    exit(1)
 
-        if failedDeletions!=0:
-            print "------ ERROR ------"
-            print "Some file deletion failed (see above), DBS invalidation part will continue but you have to take care of these orphan files!"
-            print "Failed files for "+ site +":\n"
-            for x in failedFiles:
-                print x
-            print "\n"
-            #continue
 
-        ### Delete the subdir
-        out = popen("srmrmdir "+pfnRoot).readlines()
-        if out!=[]: print out
+### the actual deletion cycle
+for site in SITES:
+    ### continue if not the selected site
+    if options.SITE!="" and site!=options.SITE: continue
+    
+    ### get the pfn string
+    lfnRoot = fileList[0][:fileList[0].rfind("/")]
+    command = "wget --no-check-certificate -O- \"https://cmsweb.cern.ch/phedex/datasvc/xml/prod/lfn2pfn?node="+site+"&protocol=srmv2&lfn="+lfnRoot+"\" 2>/dev/null |sed -e \"s/.*pfn='\([^']*\).*/"""+r"\1\n"+"""/\" 2>/dev/null"""
+    pfnRoot = popen(command).readlines()[0].strip('\n')
+    ### looping over files
+    failedDeletions = 0
+    print "Deletion in progress..."
+    for f in fileList:
+        newF = f.replace(lfnRoot,pfnRoot)
+        command = "srmrm "+newF
+        if options.DEBUG: print command
+        out = popen(command).readlines()
+        if out!=[]:
+            print "### Error "
+            print out
+            for o in out:
+                ### simple error check
+                if o.find("No such file")!=-1:
+                    alreadyDeleted = True
+                    break
+            if not alreadyDeleted:
+                failedDeletions +=1
+                failedFiles.append(newF)
+
+    if failedDeletions!=0:
+        print "------ ERROR ------"
+        print "Some file deletion failed (see above), DBS invalidation part will continue but you have to take care of these orphan files!"
+        print "Failed files for "+ site +":\n"
+        for x in failedFiles:
+            print x
+        print "\n"
+        #continue
+
+    ### Delete the subdir
+    out = popen("srmrmdir "+pfnRoot).readlines()
+    if out!=[]: print out
             
 
-        print "\n---Removing the dataset from DBS for SE: " +site
-        # List all storage elements
-        print ""
-        print "deleting block replica from "+site
-        for block in Blocks:
-            try:
+    print "\n---Removing the dataset from DBS for SE: " +site
+    # List all storage elements
+    print "\nDeleting block replica from "+site
+    for block in Blocks:
+        try:
+            if not IS_CMSSW4:
                 api.deleteReplicaFromBlock( block["Name"], str(SiteToSe[site]) )
-                print "Block replica "+block["Name"]+" removed"
-            
-            except DbsApiException, ex:
-                print "Caught API Exception %s: %s "  % (ex.getClassName(), ex.getErrorMessage() )
-                if ex.getErrorCode() not in (None, ""):
-                    print "DBS Exception Error Code: ", ex.getErrorCode()
+            else:
+                deleteReplicaFromBlock( api, block["Name"], str(SiteToSe[site]) )
+            print "Block replica "+block["Name"]+" removed"
+        
+        except DbsApiException, ex:
+            print "Caught API Exception %s: %s "  % (ex.getClassName(), ex.getErrorMessage() )
+            if ex.getErrorCode() not in (None, ""):
+                print "DBS Exception Error Code: ", ex.getErrorCode()
             
 
 ### invalidate dataset after deletion has been performed for all sites
