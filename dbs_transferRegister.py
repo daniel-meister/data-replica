@@ -25,6 +25,11 @@ from xml.dom.minidom import Node
 import data_replica 
 
 
+
+PREFERRED_SITES = []
+DENIED_SITES = ["T0","MSS"]
+
+
 ### TODO:
 # block transfer/registration? --block option
 
@@ -37,6 +42,13 @@ myparser.add_option("--dbs",action="store", dest="DBS",default="ph02",
                   help="DBS instance, can be: ph01, ph02 (default)")
 myparser.add_option("--to-site",action="store", dest="TO_SITE",default="",
                   help="Destination site. ")
+myparser.add_option("--whitelist",
+                    action="store", dest="WHITELIST", default="",
+                    help="Sets up a comma-separated White-list (preferred sites). Transfers will start from these sites. Sites not included in the whitelist will be not excluded.")
+myparser.add_option("--blacklist",
+                    action="store", dest="BLACKLIST", default="",
+                    help="Sets up a comma-separated Black-list (excluded sites).")
+        
 #myparser.add_option("--block",action="store_true", dest="INVALIDATE",default=False,
 #                  help="The argument is a block, not a dataset")
 
@@ -61,6 +73,8 @@ DBS_SERVER = {"ph01":"https://cmsdbsprod.cern.ch:8443/cms_dbs_ph_analysis_01_wri
 DATASET = args[0]
 TO_SITE = options.TO_SITE
 
+###SiteToSE and SEtoSite translation dicts, I want these global
+SiteToSe, SeToSite = getSeName()
 
 
 #Example
@@ -86,6 +100,7 @@ api = DbsApi(opts.__dict__)
 #    return fileList
 
 
+
 def createFileTxt(fileList):
     fileName = 'fileList_'+str(os.getpid())+".txt"
     myF = open(fileName, 'w')
@@ -98,6 +113,8 @@ def createFileTxt(fileList):
 class drOptions:
     usePDS = False
     Replicate = True
+    WHITELIST = ""
+    BLACKLIST = ""
     RECREATE_SUBDIRS = False
     CASTORSTAGE = False
     DEBUG = False
@@ -119,8 +136,36 @@ def addBlockReplica(api,BLOCK, SE):
             print "DBS Exception Error Code: ", ex.getErrorCode()
 
 
+### arrange sources, putting preferred ones before
+def arrange_sources(sitelist,PREFERRED_SITES, DENIED_SITES ):
+    new_sitelist = []
+    notPref_sitelist = []
+    for entry in sitelist:
+        SiteName = SeToSite[entry["Name"]]
+        allowed = True
+        for dSite in DENIED_SITES:
+            if dSite in SiteName:
+                allowed = False
+                break
+        if not allowed:
+            continue
+
+        preferred=False
+        for pSite in PREFERRED_SITES:
+            if SiteName.find(pSite)!=-1:
+                new_sitelist.append(entry)
+                preferred = True
+        if preferred: continue    
+        notPref_sitelist.append(entry)
+
+    for entry in notPref_sitelist:
+        new_sitelist.append(entry)
+    return new_sitelist
+
+    
+
 def dbs_transferRegister(DATASET, TO_SITE):
-    SiteToSe, SeToSite = getSeName()
+    #SiteToSe, SeToSite = getSeName()
     myBlocks = getDatasetBlockList(api, DATASET)
 
     if myBlocks!=1:
@@ -141,8 +186,13 @@ def dbs_transferRegister(DATASET, TO_SITE):
             myOptions.logfile = logfile
             
             sourceSEs = block['StorageElementList']
-
-            for se in sourceSEs:
+            data_replica.setBlackWhiteSiteList(options,PREFERRED_SITES, DENIED_SITES  )
+            filteredSourceSEs = arrange_sources(sourceSEs ,PREFERRED_SITES, DENIED_SITES )
+                        
+            if filteredSourceSEs == []:
+                print "[ERROR] No sites found for block:\n ",block['Name'],"\nplease review your blacklist. Exiting..."
+                exit(1)
+            for se in filteredSourceSEs:
                 print "SE: " +se['Name']
                 myOptions.FROM_SITE = SeToSite[ se['Name'] ]
                 print "Copying from "+myOptions.FROM_SITE
