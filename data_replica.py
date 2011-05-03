@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.33 2011/04/21 15:45:54 leo Exp $
+# $Id: data_replica.py,v 1.34 2011/05/03 12:14:07 leo Exp $
 #################################################################
 
 
@@ -146,11 +146,11 @@ if __name__ == "__main__":
                       help="If file exists at destination and its size is _smaller_ than the source one, delete it. WARNING: destination files are checked only for SRM endpoints.")
 
     parser.add_option("--whitelist",
-                      action="store", dest="WHITELIST", default=False,
+                      action="store", dest="WHITELIST", default="",
                       help="Sets up a comma-separated White-list (preferred sites). Transfers will start from thse sites, then data_replica will use the other sites found with the --discovery option (without --discovery this option makes no sense). Sites not included in the whitelist will be not excluded: use --blacklist for this.")
 
     parser.add_option("--blacklist",
-                      action="store", dest="BLACKLIST", default=False,
+                      action="store", dest="BLACKLIST", default="",
                       help="Sets up a comma-separated Black-list (excluded sites). Data_replica won't use these sites (without --discovery this option makes no sense).")
         
     (moptions, args) = parser.parse_args()
@@ -259,17 +259,17 @@ def retrieve_siteAndPfn(lfn):
 
 
 ### Fill the PREFERRED_SITES and DENIED_SITES arrays
-def setBlackWhiteSiteList():
-    if moptions.WHITELIST!="":
-        for site in moptions.WHITELIST.split(","):
+def setBlackWhiteSiteList(options,PREFERRED_SITES, DENIED_SITES  ):
+    if options.WHITELIST!="":
+        for site in options.WHITELIST.split(","):
             PREFERRED_SITES.append(site)
-    if moptions.BLACKLIST!="":
-        for site in moptions.BLACKLIST.split(","):
+    if options.BLACKLIST!="":
+        for site in options.BLACKLIST.split(","):
             DENIED_SITES.append(site)        
 
 
 ### arrange sources, putting preferred ones before
-def arrange_sources(sitelist,PREFERRED_SITES ):
+def arrange_sources(sitelist,PREFERRED_SITES, DENIED_SITES ):
     new_sitelist = []
     notPref_sitelist = []
     for entry in sitelist:
@@ -653,7 +653,7 @@ def data_replica(args, moptions):
         exit(-1)
 
     ###fill black/white lists
-    setBlackWhiteSiteList()
+    setBlackWhiteSiteList(options,PREFERRED_SITES, DENIED_SITES)
     
 ### Log files definition
     myPid = os.getpid() # want to use???
@@ -790,7 +790,7 @@ def data_replica(args, moptions):
                     printDebug("CastorStaging: deleted "+local_pfn)
 
             elif options.usePDS:
-                sources_list = arrange_sources(filelist,PREFERRED_SITES )
+                sources_list = arrange_sources(filelist,PREFERRED_SITES,  DENIED_SITES )
                 if sources_list == []:
                     printOutput( "ERROR: no replicas found",0,ADMIN_LOGFILE)
                     isFileAtSource=False
