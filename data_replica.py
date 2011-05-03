@@ -4,10 +4,9 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.32 2010/11/09 07:53:26 leo Exp $
+# $Id: data_replica.py,v 1.33 2011/04/21 15:45:54 leo Exp $
 #################################################################
 
-# updated for the new CMS webservices (https)
 
 
 import os
@@ -17,7 +16,7 @@ from optparse import OptionParser
 from time import time
 
 
-PREFERRED_SITES = ["T2"]
+PREFERRED_SITES = []
 DENIED_SITES = ["T0","MSS"]
 PROTOCOL = "srmv2"
 
@@ -68,7 +67,7 @@ if __name__ == "__main__":
     
 [USE CASES]
 
-  * Replicate a file list without specifying a source node (discovery). In this case, a source nodes list is retrieved from PhEDEx data service: 
+* Replicate a file list without specifying a source node (discovery). In this case, a source nodes list is retrieved from PhEDEx data service: 
 
       data_replica --discovery filelist.txt --to-site YOUR_SITE
 
@@ -145,7 +144,15 @@ if __name__ == "__main__":
     parser.add_option("--delete",
                       action="store_true", dest="DELETE", default=False,
                       help="If file exists at destination and its size is _smaller_ than the source one, delete it. WARNING: destination files are checked only for SRM endpoints.")
-    
+
+    parser.add_option("--whitelist",
+                      action="store", dest="WHITELIST", default=False,
+                      help="Sets up a comma-separated White-list (preferred sites). Transfers will start from thse sites, then data_replica will use the other sites found with the --discovery option (without --discovery this option makes no sense). Sites not included in the whitelist will be not excluded: use --blacklist for this.")
+
+    parser.add_option("--blacklist",
+                      action="store", dest="BLACKLIST", default=False,
+                      help="Sets up a comma-separated Black-list (excluded sites). Data_replica won't use these sites (without --discovery this option makes no sense).")
+        
     (moptions, args) = parser.parse_args()
     moptions.Replicate = ENABLE_REPLICATION
     
@@ -153,19 +160,6 @@ if __name__ == "__main__":
         print usage
         exit(-1)
     
-### Log files definition
-#myPid = os.getpid() # want to use???
-#USER = os.getenv('LOGNAME')
-#DATE = popen("date +'%Y%m%d%k%M'").readlines()[0].strip('\n').replace(" ","0")
-#splittedLogfile = options.logfile.split(".")
-#additionalLogName = ""
-#if options.logfile=="data_replica.log": additionalLogName = "-"+USER+"-"+DATE
-#DATAREPLICA_LOGFILE = splittedLogfile[-2]+additionalLogName+".log"
-#EXISTING_LOGFILE = splittedLogfile[-2]+"_existingList"+additionalLogName+".log"
-#FAILED_LOGFILE = splittedLogfile[-2]+"_failedList"+additionalLogName+".log"
-#SUCCESS_LOGFILE = splittedLogfile[-2]+"_successList"+additionalLogName+".log"
-#NOREPLICA_LOGFILE =splittedLogfile[-2]+"_noReplica"+additionalLogName+".log"
-#ADMIN_LOGFILE = "/tmp/data_replica-admin-"+USER+"-"+DATE+'.log'
 
 
 
@@ -264,6 +258,14 @@ def retrieve_siteAndPfn(lfn):
                             
 
 
+### Fill the PREFERRED_SITES and DENIED_SITES arrays
+def setBlackWhiteSiteList():
+    if moptions.WHITELIST!="":
+        for site in moptions.WHITELIST.split(","):
+            PREFERRED_SITES.append(site)
+    if moptions.BLACKLIST!="":
+        for site in moptions.BLACKLIST.split(","):
+            DENIED_SITES.append(site)        
 
 
 ### arrange sources, putting preferred ones before
@@ -645,7 +647,14 @@ def data_replica(args, moptions):
         if os.environ["HOSTNAME"].find("lxplus")==-1 or (options.FROM_SITE!="T2_CH_CAF" and options.FROM_SITE!="CERN_CASTOR_USER" ):
             print "--castor-stage option works only from a lxplus machine and setting --from-site=T2_CH_CAF or CERN_CASTOR_USER"
             exit(-1)
-                                                                                                                
+
+    if not options.usePDS and (options.WHITELIST!="" or options.BLACKLIST!=""):
+        print "Black/white lists make sense only if --discovery is activated, exiting."
+        exit(-1)
+
+    ###fill black/white lists
+    setBlackWhiteSiteList()
+    
 ### Log files definition
     myPid = os.getpid() # want to use???
     ### Log files definition
@@ -834,16 +843,7 @@ def data_replica(args, moptions):
                     failedTransfers+=1
                 else:
                     failedTransfers+=1   
-#
-#            if SUCCESS != 0:
-#        if myLog['detail'].find('File exist')!=-1:
-#            writeLog(EXISTING_LOGFILE,lfn+" "+myLog['to-pfn']+"\n")
-#        elif myLog['detail'].find('file does not exist')==-1 and myLog['detail'].find('no replicas')==1:
-#            ### does not consider existing file as error...
-#            writeLog(FAILED_LOGFILE,lfn+"\n")
-#            failedTransfers+=1
-#        else:
-#            failedTransfers+=1
+
                         
     print "Returned code "+str(failedTransfers)
     return failedTransfers
