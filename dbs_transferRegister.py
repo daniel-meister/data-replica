@@ -33,7 +33,7 @@ DENIED_SITES = ["T0","MSS"]
 ### TODO:
 # block transfer/registration? --block option
 
-usage = """Usage: """+sys.argv[0]+""" [--dbs=ph01|ph02] --to-site=TX_YY_SITE [--delete] dataset 
+usage = """Usage: """+sys.argv[0]+""" [--dbs=ph01|ph02] --to-site=TX_YY_SITE dataset
 
 """ 
 
@@ -48,11 +48,10 @@ myparser.add_option("--whitelist",
 myparser.add_option("--blacklist",
                     action="store", dest="BLACKLIST", default="",
                     help="Sets up a comma-separated Black-list (excluded sites).")
-myparser.add_option("--delete",
-                    action="store_true", dest="DELETE", default=False,
-                    help="If file exists at destination and its size is _smaller_ than the source one, delete it. WARNING: destination files are checked only for SRM endpoints.")
-
-
+myparser.add_option("--retransfer",
+                    action="store_true", dest="RETRANSFER", default=False,
+                    help="Do not skip already transferred block.")
+        
 #myparser.add_option("--block",action="store_true", dest="INVALIDATE",default=False,
 #                  help="The argument is a block, not a dataset")
 
@@ -124,7 +123,6 @@ class drOptions:
     DEBUG = False
     TOOL='lcg-cp'
     DRYRUN = False
-    DELETE = False
     pass
 
 def addBlockReplica(api,BLOCK, SE):
@@ -181,15 +179,25 @@ def dbs_transferRegister(DATASET, TO_SITE):
         print "Dataset Size: "+ str(totalDatasetSize/(1024*1024*1024)) +" GB"
 
         for block in myBlocks:
+            skip = False
             print "\n------- Copying block: "+ block['Name']
             print "Block Size: "+str( float(block['BlockSize'])/(1024*1024*1024))+" GB"
+
+            # Checking existing replicas
+            if not options.RETRANSFER:
+                for se in block['StorageElementList']:
+                    if SeToSite[ se["Name"] ] == TO_SITE:
+                        print "[INFO] Block already at destination, skipping"
+                        skip = True
+            
+            if skip:
+                continue
             logfile = "data_replica_"+str(os.getpid())+".log"
             fileList = getBlockListFile(api,DATASET,block['Name'])
             fileName = createFileTxt( fileList)
             myOptions = drOptions()
             myOptions.TO_SITE = TO_SITE
             myOptions.logfile = logfile
-            myOptions.delete = options.DELETE
             
             sourceSEs = block['StorageElementList']
             data_replica.setBlackWhiteSiteList(options,PREFERRED_SITES, DENIED_SITES  )
