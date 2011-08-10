@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.34 2011/05/03 12:14:07 leo Exp $
+# $Id: data_replica.py,v 1.35 2011/05/03 14:36:30 leo Exp $
 #################################################################
 
 
@@ -23,7 +23,7 @@ PROTOCOL = "srmv2"
 ###WARNING: this enables the possibility to fully replicate a SE
 ENABLE_REPLICATION=False
 
-LCG_OPTIONS_COMMON = "  "
+LCG_OPTIONS_COMMON = " -b "
 ###for lcg-utils>=1.7
 LCG_OPTIONS_17 = LCG_OPTIONS_COMMON
 LCG_OPTIONS_17 += "--srm-timeout=6000 "
@@ -296,7 +296,7 @@ def arrange_sources(sitelist,PREFERRED_SITES, DENIED_SITES ):
 
 
 def getFileSizeLCG(pfn):
-    out_pipe = popen("lcg-ls "+LCG_OPTIONS_COMMON+" -l "+pfn+" 2>/dev/null | awk '{print $5}'")
+    out_pipe = popen("lcg-ls "+LCG_OPTIONS_COMMON+" -T "+PROTOCOL+" -l "+pfn+" 2>/dev/null | awk '{print $5}'")
     #print "lcg-ls -l "+pfn+" 2>/dev/null | awk '{print $5}'"
     out = out_pipe.readlines()
     #out_pipe.close()
@@ -801,7 +801,7 @@ def data_replica(args, moptions):
                     logTransferHeader(entry, pfn_DESTINATION, ADMIN_LOGFILE)
                     SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,DATAREPLICA_LOGFILE, options.CASTORSTAGE)
                     if SUCCESS == 0:  break
-                    elif error_log.find("File exist")!=-1:  break
+                    elif error_log.lower().find("file exist")!=-1:  break
                 
 
             else:
@@ -835,7 +835,7 @@ def data_replica(args, moptions):
                     SUCCESS=1
 
             if SUCCESS != 0:
-                if myLog['detail'].find('File exist')!=-1:
+                if myLog['detail'].lower().find('file exist')!=-1:
                     writeLog(EXISTING_LOGFILE,lfn+" "+myLog['to-pfn']+"\n")
                 elif myLog['detail'].find('file does not exist')==-1 and myLog['detail'].find('no replicas')==-1:
                 ### does not consider existing file as error...
