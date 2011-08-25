@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.35 2011/05/03 14:36:30 leo Exp $
+# $Id: data_replica.py,v 1.36 2011/08/10 16:39:46 leo Exp $
 #################################################################
 
 
@@ -625,6 +625,10 @@ def data_replica(args, moptions):
         
     if options.TO_SITE == "":
         print "WARNING: no dest site given, assuming PFN destination"
+        if DESTINATION.find("///")==-1:
+            print "ERROR: PFN destination incorrect, please check"
+            exit(-1)
+                    
         
     if options.TO_SITE != "" and DESTINATION=="":
         if options.Replicate: print "No DESTINATION given, replicating data using lfn2pfn information"
