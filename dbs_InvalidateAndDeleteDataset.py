@@ -79,8 +79,12 @@ myparser.add_option("--all",action="store_true", dest="ALL",default=False,
 myparser.add_option("--site",action="store", dest="SITE",default="",
                   help="""Delete the sample from this site, both physically and from DBS (just the replica information. If the dataset is 
                   available at other sites, it is still VALID in DBS). """)
+myparser.add_option("--yes",action="store_true", dest="YES",default=False,
+                    help="""Answer YES to all the questions. USE IT WITH CARE! """)
+
 myparser.add_option("--debug",action="store_true", dest="DEBUG",default=False,
                     help="Verboooose")
+
 
 (options, args) = myparser.parse_args()
 
@@ -202,10 +206,12 @@ if options.ALL:
     recap_text += "----- ALL the copies will be deleted, and the dataset INVALIDATED in dbs"
 print recap_text
 print "#############\n "
-answer = query_yes_no("Are you sure to continue?","no")
-if answer != True:
-    print "Exiting..."
-    exit(1)
+
+if not options.YES:
+    answer = query_yes_no("Are you sure to continue?","no")
+    if answer != True:
+        print "Exiting..."
+        exit(1)
 
 
 ### the actual deletion cycle
@@ -248,8 +254,18 @@ for site in SITES:
 
     ### Delete the subdir
     out = popen("srmrmdir "+pfnRoot).readlines()
-    if out!=[]: print out
-            
+    # if subdir is not empty, usually is like this
+    #         ['Return code: SRM_NON_EMPTY_DIRECTORY\n', 'Explanation: non empty directory, no recursion flag specified \n', '\n']
+    if out!=[]:
+        if out[0].find("SRM_NON_EMPTY_DIRECTORY"):
+            SE_ROOT = pfnRoot[ : pfnRoot.find("=")+1]
+            print "\n[WARNING]: "+out[1].strip("\n")
+            print "[WARNING] check the directory content wit the command:"
+            print "[WARNING]      srmls "+pfnRoot
+            print "[WARNING] you may want to maually clean up the directory, e.g. with a similar command:"
+            print "[WARNING]    for i in `srmls "+pfnRoot+" | awk '{print $2}'`; do srmrm "+SE_ROOT+"$i ; done"
+            print "[WARNING] and then delete the parent directory/ies with srmrmdir\n"
+        else: print "\n[WARNING]: ", out
 
     print "\n---Removing the dataset from DBS for SE: " +site
     # List all storage elements
