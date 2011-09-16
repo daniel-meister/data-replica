@@ -94,7 +94,40 @@ def getTimingStats(logfile, mapping):
     pipe.close()
 
 
+### from the SimpleMemoryCheck module
+def getSimpleMemoryStats(logfile, mapping):
+    pipe = os.popen("grep -E 'MemoryCheck|Begin processing the|MemoryReport> Peak virtual size' "+logfile)
+    record = -1
+    mapping["SimpleMemory_VSIZE"] = []
+    mapping["SimpleMemory_RSS"] = []
+    mapping["SimpleMemory_record"] = []
+    
+    for x in pipe:
+        ## example of the output:
+        #%MSG
+        #Begin processing the 101st record. Run 1, Event 5901, LumiSection 60 at 14-Sep-2011 15:18:33 CEST
+        #%MSG-w MemoryCheck:  PostModule 14-Sep-2011 15:18:33 CEST Run: 1 Event: 5901
+        #MemoryCheck: event : VSIZE 389.844 0 RSS 318.309 0
+        #MemoryReport> Peak virtual size 320.594 Mbytes
+        
+        find1 =  x.find("Begin processing the")
+        find2 = x.find("MemoryCheck: event :")
+        find3 = x.find("MemoryReport> Peak virtual size")
+        if find1 !=-1 :
+            record = float( x[len("Begin processing the"): x.find("record")-3]) ##-3 is to cut away st,nd, rd,th
+        elif find2 != -1:
+            mapping["SimpleMemory_record"].append(record)
+            data = x[len("MemoryCheck: event :"):].strip().split(" ")
+            VSIZE = float( data[1])
+            RSS = float( data[4])
+            mapping["SimpleMemory_VSIZE"].append( VSIZE )
+            mapping["SimpleMemory_RSS"].append( RSS )
+        elif find3!=-1:
+            data = x[len("MemoryReport> Peak virtual size"):-1].strip().split(" ")
+            mapping["SimpleMemory_PeakVSIZE"] = float(data[0])
 
+    pipe.close()
+                                                                                                                                                
 
 
 def getModuleTimingStats(logfile, mapping):
@@ -127,12 +160,6 @@ def getModuleTimingStats(logfile, mapping):
                     mapping["TimeModule-"+producer][module] = []
                     mapping["TimeModule-"+producer][module].append(secs)
 
-            #if not mapping.has_key("TimeModule-"+producer): 
-            #    mapping["TimeModule-"+producer] = {}
-            #    #mapping["TimeModule_"+producer]['TOTAL'] = []
-            #if not mapping["TimeModule-"+producer].has_key(module): mapping["TimeModule-"+producer][module] = []
-            #mapping["TimeModule-"+producer][module].append(secs)
-            
     for x in mapping.keys():
         if x.find('TimeModule')!=-1 and x.find('record')==-1 and x.find('event')==-1:
             mapping[x]['TOTAL'] = []
@@ -148,7 +175,7 @@ def getModuleTimingStats(logfile, mapping):
                     mapping[x]['TOTAL'][i]+= mapping[x][y][i]
                     i+=1
                 
-
+    
 
 
 ###time information using /usr/bin/time
@@ -186,8 +213,12 @@ def parseDir_CMSSW(logname, acceptedSummaries,netLogFile=""):
     else:
         parseXML_CMSSW( xmlFile,job_output, acceptedSummaries)
         if job_output["Success"]:
+            #Standard Parser
             parseCMSSW_stdOut(logFile, job_output)
+            ## Your plugins
             getTimingStats(logFile, job_output)
+            getSimpleMemoryStats(logFile, job_output)
+            
             base_logname = xmlFile.split("/")[-1].split(".")[0].split("_")[0]
             
             ### is different from "" when called from another plugin
@@ -206,7 +237,14 @@ def parseDir_CMSSW(logname, acceptedSummaries,netLogFile=""):
             if os.path.isfile( vmstat_logfile ): getData_vmstat(vmstat_logfile, job_output, 10)
             
             #This one to take into account also the 60 seconds of sleep o tests (or whatever)
-            job_output["CMSSW_CpuPercentage"] = 100*job_output['TimeJob_User']/job_output['CMSSW_TotalJobTime']
+            #for k in  job_output:
+            #    print k, job_output[k]
+            if job_output.has_key('CMSSW_TotalJobTime'):    
+                job_output["CMSSW_CpuPercentage"] = 100*job_output['TimeJob_User']/job_output['CMSSW_TotalJobTime']
+            elif job_output.has_key('TimeJob_Exe'):
+                job_output["CMSSW_CpuPercentage"] = 100*job_output['TimeJob_User']/job_output['TimeJob_Exe']
+            else:
+                printWarning("No Timing info found in "+xmlFile)
 
             #getModuleTimingStats(logFile, job_output)
         #totalFiles += 1
