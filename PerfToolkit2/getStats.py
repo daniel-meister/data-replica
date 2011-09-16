@@ -4,7 +4,7 @@
 #
 # Author: Marco - Andrea Buchmann <marco.andrea.buchmann@cern.ch> and Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: revampedstats.py,v 1.1 2011/06/22 09:09:16 buchmann Exp $
+# $Id: getStats.py,v 1.1 2011/09/14 12:21:16 leo Exp $
 #################################################################
 
 
@@ -175,6 +175,7 @@ for file in sorted(fileList):
     getinfoabout(file,fileinformation[file])
     performancetree[file] = rootFile[file].Get("Performance")
     infotree[file] = rootFile[file].Get("info_tree")
+
     branchlist = performancetree[file].GetListOfBranches()
     if options.dosearch== False :
       print "Opening file",file
@@ -196,9 +197,9 @@ if options.drawvars!=False or options.Mode !=False:
   numvar=0
   all_variables=[]
   if options.drawvars!=False :
-    processallvariables(options.drawvars.split(","),collection,fileList,performancetree,histos,canvases,fileinformation,legends,STATS,options.savePng,options.saveRoot,options.DoSummary,outfile)
+    processallvariables(options.drawvars.split(","),collection,fileList,performancetree,histos,canvases,fileinformation,legends,STATS,options,outfile)
   if options.Mode !=False :
-    processallvariables(modevariables,collection,fileList,performancetree,histos,canvases,fileinformation,legends,STATS,options.savePng,options.saveRoot,options.DoSummary,outfile)
+    processallvariables(modevariables,              collection,fileList,performancetree,histos,canvases,fileinformation,legends,STATS,options,outfile)
 
 if options.DoSummary==True:
   legLabel = {}
