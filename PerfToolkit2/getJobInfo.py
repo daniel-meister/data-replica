@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: new_cpt_getJobInfo.py,v 1.2 2011/07/01 13:24:14 buchmann Exp $
+# $Id: getJobInfo.py,v 1.1 2011/09/14 12:21:15 leo Exp $
 #################################################################
 
 ### plugins moved to a directory
@@ -74,6 +74,7 @@ parser.add_option("--comments",action="store", dest="COMMENTS",default="NONE",
 
 if len(argv)<2:
     print "USAGE: "+argv[0]+" crab_dir <outfile>"
+    parser.print_help()
     exit(1)
 
 LOGDIR = args[0]
@@ -157,34 +158,27 @@ def getJobStatistics(LOGDIR,OUTFILE):
     SUMMARY = {"Success":0, "Failures":0, "Error":{}}
     spDirName = splitDirName(LOGDIR)
     
-    OUTFILE = LOGDIR.strip('/').split("/")[-1]+'.root'
-    #OUTFILE = 'BUGSQUASH.root' 
+    if OUTFILE=="": OUTFILE = LOGDIR.strip('/').split("/")[-1]+'.root'
        
-    print " "
+    print "---"
     print "OutFile:",OUTFILE
     print "Analyzing "+LOGDIR
+    print "---"
 
-    #totalFiles = 0
     ###Parsing Files
     CRAB_LOGDIR = LOGDIR+"/res/"
     ### use stdout or xml for both?
     if options.TYPE == "CRAB": LOGS = os.popen("ls "+CRAB_LOGDIR+"*.stdout")
     elif  options.TYPE == "CMSSW": LOGS = os.popen("ls "+LOGDIR+"/*.xml")
     elif options.TYPE == "CMSSWCRAB": LOGS = os.popen("ls "+CRAB_LOGDIR+"CMSSW*.stdout")
-    else: 
-        print "[ERROR] No valid log/xml file given"
-        exit(1)
-    
-    
-
-
+    else: printError("Please choose a type: CRAB, CMSSW or CMSSWCRAB")
+        
     ### creating a TTree
     outFile = ROOT.TFile(OUTFILE,"RECREATE")
     perfTree = ROOT.TTree('Performance', 'Performance')
     ### loop over logfiles/jobs
     Total_jobs=0
     Total_successfulJobs=0
-    #isFirstJob = True
     valueContainer = {}
 
     for x in LOGS:
@@ -193,16 +187,16 @@ def getJobStatistics(LOGDIR,OUTFILE):
         if options.TYPE == "CRAB": rValue = parseDir_Crab(LOGDIR, x, acceptedSummaries)
         elif  options.TYPE == "CMSSW": rValue = parseDir_CMSSW( x, acceptedSummaries)
         elif  options.TYPE == "CMSSWCRAB": rValue = parseDir_CMSSWCrab( LOGDIR, x, 'cmssw', acceptedSummaries)
-
-        
+                
         if rValue!=1: job_output = rValue
         else: continue
         #end Parse crabDir
+
 	Total_jobs+=1
 	if job_output["Success"]:
 	  Total_successfulJobs+=1
 
-        ###UserQuantities
+        ###User Quantities, aka combination of logged quantities
         totalMB = 0
         totalActualMB = 0
         totalReadTime = 0
@@ -213,8 +207,6 @@ def getJobStatistics(LOGDIR,OUTFILE):
         if job_output.has_key('tstoragefile-read-actual-total-megabytes'): totalActualMB += float(job_output['tstoragefile-read-actual-total-megabytes'])
         if job_output.has_key('tstoragefile-readv-actual-total-megabytes'): totalActualMB += float(job_output['tstoragefile-readv-actual-total-megabytes'])
 
-
-#	print job_output["Job_Number"]
 
 	### TODO: some estimate of read_kB/event
 	### TODO: find a good error handling
@@ -320,50 +312,6 @@ def getJobStatistics(LOGDIR,OUTFILE):
     info_tree.Fill()
     
     
-###############################################################info tree two
-#    information_tree = ROOT.TTree("information_tree","information_tree");
-#    label="site";
-#    configContainer = {}
-#    configContainer[label]=ROOT.std.vector( str )()
-#    information_tree.Branch(str(label),configContainer[str(label)])
-#    configContainer[label].push_back("blubbie");
-#    information_tree.Fill();
-
-######
-
-    
-    information_tree = ROOT.TTree("information_tree","information_tree");
-    
-    configContainer = {}
-    
-    configunit="site"
-    configContainer[configunit]=ROOT.std.vector( str )()
-    information_tree.Branch(str(configunit),configContainer[configunit])
-    configContainer[configunit].push_back( mystruct.site);
-    
-    configunit="config"
-    configContainer[configunit]=ROOT.std.vector( str )()
-    information_tree.Branch(str(configunit),configContainer[configunit])
-    configContainer[configunit].push_back(mystruct.config);
-    
-    configunit="sw"
-    configContainer[configunit]=ROOT.std.vector( str )()
-    information_tree.Branch(str(configunit),configContainer[configunit])
-    configContainer[configunit].push_back( mystruct.sw );
-    
-    configunit="eventsJob"
-    configContainer[configunit]=ROOT.std.vector( str )()
-    information_tree.Branch(str(configunit),configContainer[configunit])
-    configContainer[configunit].push_back(str(mystruct.eventsJob));
-    
-    configunit="timestamp"
-    configContainer[configunit]=ROOT.std.vector( str )()
-    information_tree.Branch(str(configunit),configContainer[configunit])
-    configContainer[configunit].push_back(mystruct.timestamp);
-    
-    
-    information_tree.Fill();
-
 
 #############################################3 /something entirely new here -- the job info!
 
@@ -375,7 +323,8 @@ def getJobStatistics(LOGDIR,OUTFILE):
 if __name__ == '__main__':
     getJobStatistics(LOGDIR,OUTFILE)
     from time import gmtime, strftime
-    os.environ['TZ'] = 'US/Eastern'
+    ##os.environ['TZ'] = 'US/Eastern'
+    os.environ['TZ'] = 'UTC'
     time.tzset()
 #    time.tzname('EST', 'EDT')
     print strftime("%a, %d %b %Y %H:%M:%S and add 2h", gmtime())
