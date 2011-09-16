@@ -25,9 +25,16 @@ def parseXML_Crab(myXML, mapping, acceptedSummaries):
    
         if node.attributes["Name"].value=="CpuTime":
             cpuTime =  node.attributes["Value"].value.replace('"','').split(" ")
-            mapping["TimeJob_User"] = float(cpuTime[0])
-            mapping["TimeJob_Sys"] = float(cpuTime[1])
-            mapping["CpuPercentage"] = float(cpuTime[2].strip("%"))
+            if cpuTime[0]!="NULL":
+                mapping["TimeJob_User"] = float(cpuTime[0])
+                mapping["TimeJob_Sys"] = float(cpuTime[1])
+                mapping["CpuPercentage"] = float(cpuTime[2].strip("%"))
+            else:
+                print "[WARNING]: no CpuTime value in the XML file " + myXML
+                mapping["TimeJob_User"] = float(0)
+                mapping["TimeJob_Sys"] = float(0)
+                mapping["CpuPercentage"] = float(0)
+                
         else:
             try:
                 value = float(node.attributes["Value"].value)
