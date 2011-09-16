@@ -26,10 +26,16 @@ class bcolors:
         self.FAIL = ''
         self.ENDC = ''
 
+### needed to keep objects in memory
+myMultiGraphs = {}
+myMultiGraphsMultiJob = {}
+
+        
 def makeabstracthisto1d2d3d(command,samplename,tree,c1,whichjob) :
   c1.cd()
   repcommand=command.replace(":","____")
   addendum=""
+  drawoption=""
   if(command.find(":")==-1 and whichjob==-1) :
     # one dimensional draw command (standard)
     tree.Draw(command+">>h_"+samplename+"_"+repcommand)
@@ -40,7 +46,7 @@ def makeabstracthisto1d2d3d(command,samplename,tree,c1,whichjob) :
       #dealing with a WN quantity
       drawoption="Entry$=="+str(whichjob)
       addendum="__"+str(whichjob)
-      if (command.find(":WN_net_Seconds")==-1):
+      if (command.find(":")==-1):
 	#it's possible that the user already specified to draw the WN quantity against WN_net_Seconds so we don't want to do this once more
 	command=command+":WN_net_Seconds"
       tree.Draw(command+">>h_"+samplename+"_"+repcommand+addendum,drawoption,"l")
@@ -49,14 +55,15 @@ def makeabstracthisto1d2d3d(command,samplename,tree,c1,whichjob) :
       #in the case of WN diagrams we really want the GRAPH and not the TH2F which just gives the area.
     else :
       #not dealing with a WN quantity but with a multidimensional canvas ... 
-      print bcolors.WARNING+" drawing something multidimensional - is this working?"+bcolors.ENDC
+      #print bcolors.WARNING+" drawing something multidimensional - is this working?"+bcolors.ENDC
       tree.Draw(command+">>h_"+samplename+"_"+repcommand+addendum,drawoption)
-      tempobject = c1.cd().GetPrimitive(("h_"+samplename+"_"+repcommand+addendum));
-    
-#    print "just drawn command"+command+" with drawoption "+drawoption
-#    c1.SaveAs("exp/"+samplename+"_"+repcommand+"__"+str(whichjob)+".png")
+      tempobjecta = c1.cd().GetPrimitive("Graph");
+      #tempobject = c1.cd().GetPrimitive(("h_"+samplename+"_"+repcommand+addendum));
+      tempobject = tempobjecta.Clone("g_"+samplename+"_"+repcommand+addendum)
     
   return tempobject
+
+
 
 #def REMOVE_makeabstracthisto(command,samplename,tree,c1,whichjob) :
 #  ### REMOVE THIS IF NOT NEEDED ANYMORE!
@@ -93,6 +100,8 @@ def retrieve_info_from_tree(configobjectname,infotree) :
   if(configobjectname=="nevents"): returnname=int(returnname.replace("ne",""))
   if(configobjectname=="njobs"): returnname=int(returnname.replace("nj",""))
   return returnname
+
+
 
 def distribute_nPads(nPads,nPadsxy) :
   #we are trying to create a quadratic canvas
@@ -136,11 +145,11 @@ def print_config(fileList,show=True) :
     getinfoabout(file,configuration)
     print ""
     print bcolors.OKGREEN+"File "+str(filecounter)+" : "+file+bcolors.ENDC
-    print "Configuration : "+configuration["config"]
-    print "Number of Events: "+str(configuration["eventsJob"])
-    print "Number of Jobs: "+str(configuration["njobs"])
-    print "Sw: "+configuration["sw"]
-    print "Site: "+configuration["site"]
+    print "Configuration (key=config): "+configuration["config"]
+    print "Number of Events (key=eventsJob): "+str(configuration["eventsJob"])
+    print "Number of Jobs (key=njobs): "+str(configuration["njobs"])
+    print "Sw (key=sw): "+configuration["sw"]
+    print "Site (key=site): "+configuration["site"]
     print "Time Stamp:"+configuration["timestamp"]
   print ""
 
@@ -189,6 +198,8 @@ def searchfor(keyword,firstfile,quiet=True) :
       print bcolors.FAIL+"There were no results for your keyword ("+keyword+"). Please try again with a different keyword or try to be less specific"+bcolors.ENDC
   return collection
   
+
+
 def compute_dimension(variable):
   if variable.find(":")==-1:
       return 1 #one dimensional variable
@@ -308,15 +319,37 @@ def create_legend(QUANT,histos,fileList,fileinformation,i) :
   leg.SetLineColor(10)
   leg.SetLineWidth(10)
 
+  ### decide which label to use in the legend
+  labelKey = ""
+  nFiles = len(fileList)
+  if nFiles>1:
+      
+      if fileinformation[ fileList[0] ].has_key("site"):
+          if fileinformation[ fileList[0] ]["site"] != fileinformation[ fileList[1] ]["site"]: labelKey="site"
+      if fileinformation[ fileList[0] ].has_key("config") and labelKey=="":
+          if  fileinformation[ fileList[0] ]["config"] != fileinformation[ fileList[1] ]["config"]: labelKey="config"
+  
+
   for filen in fileList:
-    SAMPLE = filen[filen.find("SAMPLE")+len("SAMPLE")+1:]
-    if (i==-1) :
-      #case: not WN
-      leg.AddEntry(histos[QUANT][SAMPLE],fileinformation[filen]["site"],"l")
-    else :
-      #case: WN
-      leg.AddEntry(histos[QUANT][SAMPLE][i],fileinformation[filen]["site"],"l")
+      if labelKey == "": myLabel = fileList[0]
+      else: myLabel = fileinformation[filen][labelKey]
+          
+      SAMPLE = filen[filen.find("SAMPLE")+len("SAMPLE")+1:]
+      if (i==-1) :
+         #case: not WN
+         leg.AddEntry(histos[QUANT][SAMPLE], myLabel,"l")
+      else :
+         #case: WN
+         leg.AddEntry(histos[QUANT][SAMPLE][i], myLabel,"l")
+  if labelKey=="":
+      leg.SetHeader("file name")
+  else: leg.SetHeader( labelKey )
   return leg
+
+
+
+
+
 
 def draw_multiple(fileList,canvases,candidate,nPads,histos,i) :
   xmax=-1;
@@ -325,9 +358,19 @@ def draw_multiple(fileList,canvases,candidate,nPads,histos,i) :
   ymin=-1;
   canvases[candidate].cd(i+1)
   filecounter=0
+
+  if not myMultiGraphsMultiJob.has_key(candidate): myMultiGraphsMultiJob[candidate] = []
+
+  myMultiGraphsMultiJob[candidate].append(  ROOT.TMultiGraph() )
+  
   for file in fileList :
     SAMPLE = file[file.find("SAMPLE")+len("SAMPLE")+1:]
     QUANT=candidate
+
+    if not isinstance( histos[QUANT][SAMPLE][i] , ROOT.TGraph):
+        printError(candidate+" is not a TGraph, I don't know how to handle it")
+              
+  
     colorconfiguration={}
     givenicecolor(filecounter,colorconfiguration)
     filecounter+=1
@@ -351,43 +394,62 @@ def draw_multiple(fileList,canvases,candidate,nPads,histos,i) :
       if histos[QUANT][SAMPLE][i].GetXaxis().GetXmax()>xmax:
 	xmax=histos[QUANT][SAMPLE][i].GetXaxis().GetXmax()
 
+
   for file in fileList :
     SAMPLE = file[file.find("SAMPLE")+len("SAMPLE")+1:]
     QUANT=candidate
+        
+    myMultiGraphsMultiJob[candidate][i].Add(histos[QUANT][SAMPLE][i])
+    
     if file==fileList[0]:
       pad2d=ROOT.TH2F("pad2d_"+QUANT+"_"+SAMPLE+"_pad"+str(i),"pad2d_"+QUANT+"_"+SAMPLE+"_pad"+str(i),100,xmin,xmax,100,ymin,ymax)
-      histos[QUANT][SAMPLE][i].GetXaxis().SetTitle("Seconds")
-      histos[QUANT][SAMPLE][i].GetYaxis().SetTitle(QUANT)
-      histos[QUANT][SAMPLE][i].GetYaxis().CenterTitle()
-      histos[QUANT][SAMPLE][i].GetXaxis().CenterTitle()
-      histos[QUANT][SAMPLE][i].SetTitle(QUANT+": Job "+str(i+1))
       pad2d.Draw()
-      histos[QUANT][SAMPLE][i].GetXaxis().SetRangeUser(float(xmin),float(xmax))
-      histos[QUANT][SAMPLE][i].GetYaxis().SetRangeUser(float(0.8*ymin),float(1.2*ymax))
-      histos[QUANT][SAMPLE][i].Draw("same AC")
+
+    if len(candidate.split(":")) ==2:
+        xLabel = candidate.split(":")[1]
+        yLabel = candidate.split(":")[0]
     else:
-      histos[QUANT][SAMPLE][i].SetTitle(QUANT+": Job "+str(i+1))
-      histos[QUANT][SAMPLE][i].GetXaxis().SetTitle("Seconds")
-      histos[QUANT][SAMPLE][i].GetYaxis().SetTitle(QUANT)
-      histos[QUANT][SAMPLE][i].GetYaxis().CenterTitle()
-      histos[QUANT][SAMPLE][i].GetXaxis().CenterTitle()
-      histos[QUANT][SAMPLE][i].Draw("same AC")
+        xLabel = ""
+        yLabel = candidate
+        
+
+  myMultiGraphsMultiJob[candidate][i].Draw("al")
+    
+  myMultiGraphsMultiJob[candidate][i].GetXaxis().SetTitle(xLabel)
+  myMultiGraphsMultiJob[candidate][i].GetYaxis().SetTitle(yLabel)
+            
+  #myMultiGraphsMultiJob[candidate][i].Draw("al")
 #  canvases[candidate].SaveAs("exp/pads/test_pad_"+str(i+1)+".png")
   
   
 
 
 
-def draw_one(fileList,canvases,candidate,nPads,histos) :
+def draw_one(fileList,canvases,candidate,nPads,histos ) :
   xmax=-1;
   xmin=-1;
   ymax=-1;
   ymin=-1;
+
+  #rangeHisto = ROOT.TH1F("rangeHisto","",100,0,1000)
+  fileNumber = 0
+  
   canvases[candidate].cd()
   filecounter=0
+
+  isTH1F = False
+  isTGraph = False
+
+  QUANT=candidate
+      
   for file in fileList :
     SAMPLE = file[file.find("SAMPLE")+len("SAMPLE")+1:]
-    QUANT=candidate
+    
+    fIsTH1F = False
+    fIsTGraph = False
+    if isinstance( histos[QUANT][SAMPLE] , ROOT.TH1F): isTH1F=True
+    elif isinstance( histos[QUANT][SAMPLE] , ROOT.TGraph): isTGraph=True
+
     colorconfiguration={}
     givenicecolor(filecounter,colorconfiguration)
     filecounter+=1
@@ -395,41 +457,80 @@ def draw_one(fileList,canvases,candidate,nPads,histos) :
     histos[QUANT][SAMPLE].SetLineColor(colorconfiguration["color"])
     histos[QUANT][SAMPLE].SetMarkerColor(colorconfiguration["color"])
     
+    if not isTH1F: continue
+    
     if file==fileList[0]:
-      ymin=histos[QUANT][SAMPLE].GetMinimum()
-      ymax=histos[QUANT][SAMPLE].GetMaximum()
-      xmax=histos[QUANT][SAMPLE].GetXaxis().GetXmax()
-      xmin=histos[QUANT][SAMPLE].GetXaxis().GetXmin()
-    else :
-      if histos[QUANT][SAMPLE].GetMinimum()<ymin:
-	ymin=histos[QUANT][SAMPLE].GetMinimum()
-      if histos[QUANT][SAMPLE].GetMaximum()>ymax:
-	ymax=histos[QUANT][SAMPLE].GetMaximum()
-      if histos[QUANT][SAMPLE].GetXaxis().GetXmax()>xmax:
-	xmax=histos[QUANT][SAMPLE].GetXaxis().GetXmax()
-      if histos[QUANT][SAMPLE].GetXaxis().GetXmin()<xmin:
-	xmin=histos[QUANT][SAMPLE].GetXaxis().GetXmin()
-  ROOT.gStyle.SetOptStat(0)
-  for file in fileList :
-    SAMPLE = file[file.find("SAMPLE")+len("SAMPLE")+1:]
-    QUANT=candidate
-    if file==fileList[0]:
-      histos[QUANT][SAMPLE].GetXaxis().SetRangeUser(xmin,xmax)
-      histos[QUANT][SAMPLE].GetYaxis().SetRangeUser(0.8*ymin,1.2*ymax)
-      histos[QUANT][SAMPLE].Draw()
+        xmax=histos[QUANT][SAMPLE].GetXaxis().GetXmax()
+        xmin=histos[QUANT][SAMPLE].GetXaxis().GetXmin()
     else:
-      histos[QUANT][SAMPLE].Draw("same")
+        if histos[QUANT][SAMPLE].GetXaxis().GetXmax()>xmax:
+            xmax=histos[QUANT][SAMPLE].GetXaxis().GetXmax()
+        if histos[QUANT][SAMPLE].GetXaxis().GetXmin()<xmin:
+            xmin=histos[QUANT][SAMPLE].GetXaxis().GetXmin()
+  ROOT.gStyle.SetOptStat(0)
+
+
+  for file in fileList :
+      if not isTH1F: break
+      SAMPLE = file[file.find("SAMPLE")+len("SAMPLE")+1:]
+      QUANT=candidate
+      histos[QUANT][SAMPLE].SetBit(ROOT.TH1.kCanRebin);
+      histos[QUANT][SAMPLE].Fill(0.8*xmin,0)
+      histos[QUANT][SAMPLE].Fill(1.2*xmax,0)
       
+      if file==fileList[0]:
+          ymin=histos[QUANT][SAMPLE].GetMinimum()
+          ymax=histos[QUANT][SAMPLE].GetMaximum()
+      else:
+          if histos[QUANT][SAMPLE].GetMinimum()<ymin:
+              ymin=histos[QUANT][SAMPLE].GetMinimum()
+          if histos[QUANT][SAMPLE].GetMaximum()>ymax:
+              ymax=histos[QUANT][SAMPLE].GetMaximum()
+
+  if isTGraph:
+      myMultiGraphs[candidate] = ROOT.TMultiGraph()
+  for file in fileList :
+      SAMPLE = file[file.find("SAMPLE")+len("SAMPLE")+1:]
+      QUANT=candidate
+
+      if isTH1F:
+          histos[QUANT][SAMPLE].GetXaxis().SetRangeUser(0.8*xmin,1.2*xmax)
+          histos[QUANT][SAMPLE].GetYaxis().SetRangeUser(0.8*ymin,1.2*ymax)
+          if file==fileList[0]:
+              histos[QUANT][SAMPLE].Draw("")
+              printDevel( SAMPLE+" "+str(histos[QUANT][SAMPLE].GetNbinsX()) )
+          else:
+    ### FIXME: update for multiple files, as above
+              histos[QUANT][SAMPLE].Draw("same")
+              printDevel( SAMPLE+" "+str(histos[QUANT][SAMPLE].GetNbinsX()) )
+      elif isTGraph:
+          myMultiGraphs[candidate].Add( histos[QUANT][SAMPLE] )
+      else:
+          printWarning(QUANT+" is not a TH1F nor a TGraph, doing nothing...")
+  if isTGraph:
+      #myMultiGraphs[candidate].GetXaxis().SetTitle("TEST")
+      xLabel = QUANT.split(":")[1]
+      yLabel = QUANT.split(":")[0]
+      myMultiGraphs[candidate].Draw("A*")
+      myMultiGraphs[candidate].GetXaxis().SetTitle(xLabel)
+      myMultiGraphs[candidate].GetYaxis().SetTitle(yLabel)
+            
   canvases[candidate].Update()
 
-def processallvariables(variables,variablecollection,filename,performancetree,histos,canvases,fileinformation,legend,stats,savepng,saveroot,dosummary,outfile) :
+
+###########################################
+#### The main routine
+def processallvariables(variables,variablecollection,filename,performancetree,histos,canvases,fileinformation,legend,stats,
+                        #savepng,saveroot,dosummary,
+                        options,outfile) :
 ####adds all variables containing the substring to our plotting collection
     ROOT.gROOT.SetStyle("Plain")
     #c1 = ROOT.TCanvas("c1","c1")
     candidates=[]
     plotcanvas=ROOT.TCanvas("plot_canvas","plot_canvas")
+
     for currentvar in variables:
-#      print "Called for currentvar="+str(currentvar)+"; canvas currently contains "+str(len(canvases))
+      print "Called for currentvar="+str(currentvar)+"; canvas currently contains "+str(len(canvases))
       new_compute_all_candidates(currentvar,filename,candidates)
     candcounter=0
     ##at this point we've "collected" all the variables that we'd like to draw and are ready for showtime !
@@ -448,7 +549,8 @@ def processallvariables(variables,variablecollection,filename,performancetree,hi
 	    nPadarray={}
 	    isWnquantity=False;
 	    nPads=1;
-	    if(candidate.find("WN_")!=-1) : 
+	    if(candidate.find("WN_")!=-1) :
+            #if candidate.find(":") != -1:
 	      isWnquantity=True;
 	      nPads=get_nPads(filename,nPadarray)
 	      nPadsxy={}
@@ -457,6 +559,7 @@ def processallvariables(variables,variablecollection,filename,performancetree,hi
 	    for file in filename:
 	      SAMPLE = file[file.find("SAMPLE")+len("SAMPLE")+1:]
 	      QUANT=candidate
+              
 	      if not stats.has_key(SAMPLE): stats[SAMPLE]={'Error':{}}
 	      mySTATS = stats[SAMPLE]
 	      if not histos.has_key(QUANT):
@@ -465,12 +568,16 @@ def processallvariables(variables,variablecollection,filename,performancetree,hi
 		histos[QUANT][SAMPLE] = makeabstracthisto1d2d3d(candidate,SAMPLE,performancetree[file],plotcanvas,-1)
 		stats[SAMPLE][QUANT]=(histos[QUANT][SAMPLE].GetMean(),histos[QUANT][SAMPLE].GetRMS())
 	      else:
-		#dealing with a "WN" quantity
+		#dealing with a "WN" quantity => 1 plot for each job
 		histos[QUANT][SAMPLE] = {}
-		if dosummary==True: stats[SAMPLE][QUANT][i] = {}
+                ###FIXME: this seems not to work
+                if options.DoSummary==True: stats[SAMPLE][QUANT][i] = {}
 		for i in range (0,nPads) :
 		  histos[QUANT][SAMPLE][i] = makeabstracthisto1d2d3d(candidate,SAMPLE,performancetree[file],plotcanvas,i)
-		  if dosummary==True: stats[SAMPLE][QUANT][i]=(histos[QUANT][SAMPLE][i].GetMean(),histos[QUANT][SAMPLE][i].GetRMS())
+                  if options.DoSummary==True: stats[SAMPLE][QUANT][i]=(histos[QUANT][SAMPLE][i].GetMean(),histos[QUANT][SAMPLE][i].GetRMS())
+                ### overall distribution
+                #histos[QUANT][SAMPLE][i+1] = makeabstracthisto1d2d3d(candidate,SAMPLE,performancetree[file],plotcanvas2,-1)
+                                
 	      if candidate == "Error" :
 		stats[SAMPLE]["Failures"] = failurehisto=(makeabstracthisto1d2d3d("Error",SAMPLE,performancetree[file],plotcanvas,-1)).Integral()
 		if not histos.has_key("TimeJob_CpuPercentage"):
@@ -492,7 +599,7 @@ def processallvariables(variables,variablecollection,filename,performancetree,hi
 		  
 # at this point we are done preparing the histogram(s)
 	    filecounter=0
-	    draw_everything(filename,canvases,candidate,nPads,histos,legend,fileinformation,savepng,saveroot,outfile) ## draw the variable!
+	    draw_everything(filename,canvases,candidate,nPads,histos,legend,fileinformation,options.savePng, options.saveRoot,outfile) ## draw the variable!
 
 
 def SaveCanvasName(candidate) :
@@ -500,7 +607,7 @@ def SaveCanvasName(candidate) :
 
 def draw_everything(fileList,canvases,candidate,nPads,histos,legend,fileinformation,savepng,saveroot,outfile) :
   if nPads==1:
-    draw_one(fileList,canvases,candidate,nPads,histos);
+    draw_one(fileList,canvases,candidate,nPads,histos );
     legend[candidate]=create_legend(candidate,histos,fileList,fileinformation,-1,)
     legend[candidate].Draw()
   else :
@@ -756,7 +863,26 @@ def translateTime(str):
         mult *=60
         i +=1
     return seconds
-                                                
+
+
+
+##### Print functions
+def printError(str):
+    print "[ERROR]: "+str
+    exit(1)
+
+def printWarning(str):
+    print "[WARNING]: "+str
+
+def printDevel(message):
+    function = sys._getframe( 1 ).f_code.co_name
+    line = sys._getframe( 1 ).f_lineno
+    file = sys._getframe( 1 ).f_code.co_filename
+    print "[DEVEL]: file="+file+" func="+function+" L"+str(line)+" Message: "+message
+      
+            
+
+                                                                                                                   
 
 ######################### THIS IS THE GONER AREA -- OLD FUNCTIONS THAT NEED REIMPLEMENTING!
 
