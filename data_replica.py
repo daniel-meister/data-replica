@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.37 2011/08/25 12:50:56 leo Exp $
+# $Id: data_replica.py,v 1.38 2011/10/28 13:25:23 leo Exp $
 #################################################################
 
 
@@ -712,6 +712,7 @@ def data_replica(args, moptions):
     list = open(args[0])
     total_files=0
     for x in list.readlines():
+        if x[0]=="#": continue #forget about lines starting with #
         if x!='\n':
             total_files += 1
             writeLog(ADMIN_LOGFILE,x)
@@ -737,6 +738,8 @@ def data_replica(args, moptions):
     SUCCESS = 1
     list.seek(0)
     for lfn in list.readlines():
+        if lfn[0]=="#": continue #forget about lines starting with #
+        
         lfn = lfn.strip("\n").strip(" ").strip("\t")
 
         printDebug("LFN: "+lfn)
