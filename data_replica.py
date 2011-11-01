@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.38 2011/10/28 13:25:23 leo Exp $
+# $Id: data_replica.py,v 1.39 2011/10/28 14:08:27 leo Exp $
 #################################################################
 
 
@@ -24,11 +24,13 @@ PROTOCOL = "srmv2"
 ENABLE_REPLICATION=False
 
 LCG_OPTIONS_COMMON = " -b "
-###for lcg-utils>=1.7
+###for lcg-utils>=1.7 and < 1.11
 LCG_OPTIONS_17 = LCG_OPTIONS_COMMON
 LCG_OPTIONS_17 += "--srm-timeout=6000 "
 LCG_OPTIONS_17+= "-n 1 "
 LCG_OPTIONS_17+= "--connect-timeout=6000 "
+###for lcg-utils>= 1.11
+#LCG_OPTIONS_1_11
 ###for lcg-utisl <1.7
 LCG_OPTIONS = LCG_OPTIONS_COMMON
 LCG_OPTIONS = "--timeout=6000 "
@@ -296,11 +298,14 @@ def arrange_sources(sitelist,PREFERRED_SITES, DENIED_SITES ):
 
 
 def getFileSizeLCG(pfn):
+    command = "lcg-ls "+LCG_OPTIONS_COMMON+" -T "+PROTOCOL+" -l "+pfn+" 2>/dev/null | awk '{print $5}'"
+    printDebug("Check file size with: " + command)
     out_pipe = popen("lcg-ls "+LCG_OPTIONS_COMMON+" -T "+PROTOCOL+" -l "+pfn+" 2>/dev/null | awk '{print $5}'")
     #print "lcg-ls -l "+pfn+" 2>/dev/null | awk '{print $5}'"
     out = out_pipe.readlines()
     #out_pipe.close()
-
+    for i in out: printDebug("Output: " + i.strip('\n'))
+        
     if len(out) == 0:
         size = -1
     else:
@@ -727,9 +732,14 @@ def data_replica(args, moptions):
         pipe.close()
         splitOut = out.split('-')
         if len(splitOut)>1:
-            version = splitOut[1].split('.')[0]+'.'+splitOut[1].split('.')[1]+splitOut[1].split('.')[2]
+            version = splitOut[1].split('.')[0]+'.'+splitOut[1].split('.')[1]#+splitOut[1].split('.')[2]
+            ### valid only for 1.X versions
+            version = version.split('.')[1]
             version = float(version)
-        if version >= 1.7: copyOptions = LCG_OPTIONS_17
+            
+        printDebug("LCG-UTILS version: "+ str(version))
+        if version >= 7: copyOptions = LCG_OPTIONS_17
+        #elif version >= 1.11: copyOptions = LCG_OPTIONS_1_11
         else:  copyOptions = LCG_OPTIONS
     elif options.TOOL=='srmcp':
         copyOptions = SRM_OPTIONS
@@ -813,7 +823,7 @@ def data_replica(args, moptions):
 
             else:
                 if options.FROM_SITE=='CERN_CASTOR_USER':
-                    pfn = "srm://srm-cms.cern.ch/srm/managerv2?SFN="+lfn
+                    pfn = "srm://srm-cms.cern.ch:8443/srm/managerv2?SFN="+lfn
                 else:
                     pfn = retrieve_pfn(lfn,options.FROM_SITE)
                 printDebug("PFN:"+ pfn)
