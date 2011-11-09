@@ -51,7 +51,13 @@ myparser.add_option("--blacklist",
 myparser.add_option("--retransfer",
                     action="store_true", dest="RETRANSFER", default=False,
                     help="Do not skip already transferred block.")
-        
+myparser.add_option("--copy-tool",
+                    action="store", dest="TOOL", default="lcg-cp",
+                    help="Selects the copy tool to be used (lcg-cp or srmcp). By default lcg-cp is used")
+myparser.add_option("--debug",
+                  action="store_true", dest="DEBUG", default=False,
+                  help="Verbose mode")
+
 #myparser.add_option("--block",action="store_true", dest="INVALIDATE",default=False,
 #                  help="The argument is a block, not a dataset")
 
@@ -198,6 +204,8 @@ def dbs_transferRegister(DATASET, TO_SITE):
             myOptions = drOptions()
             myOptions.TO_SITE = TO_SITE
             myOptions.logfile = logfile
+            myOptions.DEBUG = options.DEBUG
+            myOptions.TOOL = options.TOOL
             
             sourceSEs = block['StorageElementList']
             data_replica.setBlackWhiteSiteList(options,PREFERRED_SITES, DENIED_SITES  )
