@@ -57,6 +57,9 @@ myparser.add_option("--copy-tool",
 myparser.add_option("--debug",
                   action="store_true", dest="DEBUG", default=False,
                   help="Verbose mode")
+myparser.add_option("--delete", 
+                    action="store_true", dest="DELETE", default=False, 
+                    help="If file exists at destination and its size is _smaller_ than the source one, delete it. WARNING: destination files are checked only for SRM endpoints.")
 
 #myparser.add_option("--block",action="store_true", dest="INVALIDATE",default=False,
 #                  help="The argument is a block, not a dataset")
@@ -129,6 +132,7 @@ class drOptions:
     DEBUG = False
     TOOL='lcg-cp'
     DRYRUN = False
+    DELETE = False
     pass
 
 def addBlockReplica(api,BLOCK, SE):
@@ -206,6 +210,7 @@ def dbs_transferRegister(DATASET, TO_SITE):
             myOptions.logfile = logfile
             myOptions.DEBUG = options.DEBUG
             myOptions.TOOL = options.TOOL
+            myOptions.delete = options.DELETE
             
             sourceSEs = block['StorageElementList']
             data_replica.setBlackWhiteSiteList(options,PREFERRED_SITES, DENIED_SITES  )
