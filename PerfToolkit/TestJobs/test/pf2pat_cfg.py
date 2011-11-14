@@ -70,6 +70,12 @@ process.ak5JetTracksAssociatorAtVertex.jets = cms.InputTag("ak5PFJets")
 #process.SimpleMemoryCheck = cms.Service("SimpleMemoryCheck")
 
 
+### TFileAdaptor settings
+#process.AdaptorConfig = cms.Service("AdaptorConfig",
+#                                    tempDir=cms.untracked.string(""),
+#                                    cacheHint=cms.untracked.string("lazy-download"),
+#                                    readHint=cms.untracked.string("auto-detect"))
+#process.source.cacheSize = cms.untracked.uint32(20*1024*1024)
 
 process.p = cms.Path(
     process.kt6PFJets
