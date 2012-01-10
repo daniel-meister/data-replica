@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.39 2011/10/28 14:08:27 leo Exp $
+# $Id: data_replica.py,v 1.40 2011/11/01 11:52:55 leo Exp $
 #################################################################
 
 
@@ -42,6 +42,10 @@ SRM_OPTIONS = "-streams_num=1 "
 SRM_OPTIONS += "-retry_num=1 "
 SRM_OPTIONS += "-request_lifetime=6000 "
 
+
+#### HardCoded sites:
+CERN_EOS_SRM = "srm://srm-eoscms.cern.ch:8443/srm/v2/server?SFN=/eos/cms/"
+CERN_CASTOR_SRM = "srm://srm-cms.cern.ch:8443/srm/managerv2?SFN="
 
 if __name__ == "__main__":
     usage = """usage: %prog [options] filelist.txt [dest_dir]
@@ -106,6 +110,9 @@ if __name__ == "__main__":
   * When copying from a Castor area from lxplus and you want to pre-stage files to a local /tmp directory through rfcp
   (useful when copying files not accessed since long, avoiding srm timeouts), use --castor-stage.
 
+  * Copying data from EOS@CERN, you have to specify --from-site CERN_EOS. Filenames in filelist.txt are still LFN (/store/...):
+
+      data_replica.py --from-site CERN_EOS --to-site T3_CH_PSI filelist.txt /store/user/leo/testEos
   
   Use the -h option for more information
   
@@ -173,8 +180,10 @@ def writeLog(logname,message):
     
 def printDebug(string):
     if options.DEBUG:
-        print "[DEBUG]: "+string
+        print "[DEBUG]: "+str(string)
 
+def printError(string):
+    print "[ERROR]: "+str(string)
 
 def printOutput(string, level=0, logfile=''):
     out = ""
@@ -188,8 +197,8 @@ def printOutput(string, level=0, logfile=''):
 ###given a lfn and an array, retrieves and stores in the array a dictionary like {"node", node_name}
 def retrieve_siteList(lfn,entry):
     if len(lfn)<2:
-        print "[ERROR] NO VALID LFN!!!"
-        return 1
+        printError( lfn+" is not a valid LFN")
+        exit(1)
     command = """wget --no-check-certificate -O- \"https://cmsweb.cern.ch/phedex/datasvc/xml/prod/FileReplicas?lfn="""+lfn+"""\"  2>/dev/null"""
     out = popen(command)
     init = 0
@@ -229,8 +238,8 @@ def retrieve_pfn(lfn,site):
     pfn = ""
     #site = entry["node"]
     if len(lfn)<2:
-        print "[ERROR] NO VALID LFN!!!"
-        return 1
+        printError( lfn+" is not a valid LFN")
+        exit(1)
 
     if site=='LOCAL':
         pfn = "file:///"+lfn
@@ -241,8 +250,8 @@ def retrieve_pfn(lfn,site):
             pfn = x.strip("\n")
             
     if len(pfn) <1:
-        print "[ERROR] NO VALID PFN!!!"
-        return 1
+        printError( pfn+" is not a valid PFN")      
+        exit(1)
                     
     #printDebug(pfn)
     return pfn
@@ -255,7 +264,6 @@ def retrieve_siteAndPfn(lfn):
     retrieve_siteList(lfn,entry)
     for x in entry:
         x["pfn"] =  retrieve_pfn(lfn,x["node"])
-    #filelist[lfn]  =entry
     return entry
                             
 
@@ -631,7 +639,7 @@ def data_replica(args, moptions):
     if options.TO_SITE == "":
         print "WARNING: no dest site given, assuming PFN destination"
         if DESTINATION.find("srm://")==-1 and DESTINATION.find("file://")==-1 :
-            print "ERROR: PFN destination incorrect, please check. "
+            printError("PFN destination incorrect, please check. ")
             exit(-1)
                     
         
@@ -823,7 +831,9 @@ def data_replica(args, moptions):
 
             else:
                 if options.FROM_SITE=='CERN_CASTOR_USER':
-                    pfn = "srm://srm-cms.cern.ch:8443/srm/managerv2?SFN="+lfn
+                    pfn = CERN_CASTOR_SRM+lfn
+                elif options.FROM_SITE=='CERN_EOS':
+                    pfn = CERN_EOS_SRM+lfn
                 else:
                     pfn = retrieve_pfn(lfn,options.FROM_SITE)
                 printDebug("PFN:"+ pfn)
@@ -832,7 +842,7 @@ def data_replica(args, moptions):
                 if options.FROM_SITE!='LOCAL':
                     source["size"] =  getFileSizeLCG(pfn )#out[0].strip("\n")
                     if source["size"]==-1:
-                        printOutput( "[ERROR] file does not exist on source", 0, ADMIN_LOGFILE)
+                        printOutput( "[ERROR] file does not exist on source: "+pfn, 0, ADMIN_LOGFILE)
                         isFileAtSource=False
                         writeLog(NOREPLICA_LOGFILE,myLog["lfn"]+'\n')
                         #continue
