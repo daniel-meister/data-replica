@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.40 2011/11/01 11:52:55 leo Exp $
+# $Id: data_replica.py,v 1.41 2012/01/10 21:05:31 leo Exp $
 #################################################################
 
 
@@ -74,44 +74,35 @@ if __name__ == "__main__":
 [USE CASES]
 
 * Replicate a file list without specifying a source node (discovery). In this case, a source nodes list is retrieved from PhEDEx data service: 
-
-      data_replica --discovery filelist.txt --to-site YOUR_SITE
+      data_replica --discovery --to-site YOUR_SITE filelist.txt
 
   * Replicate a file list using discovery and giving a destination folder:
-
-      data_replica --discovery filelist.txt --to-site YOUR_SITE /store/user/leo
+      data_replica --discovery --to-site YOUR_SITE filelist.txt /store/user/leo
 
   * Replicate a file list NOT registered in PhEDEx. In this case, you should specify --from-site.
-
-      data_replica filelist.txt --from-site FROM_SITE --to-site YOUR_SITE
+      data_replica  --from-site FROM_SITE --to-site YOUR_SITE filelist.txt
 
   * Replicate a file list NOT registered in PhEDEx, giving a destination folder.Also in this case, you should specify --from-site.
-
-      data_replica filelist.txt --from-site FROM_SITE --to-site YOUR_SITE /store/user/leo
+      data_replica  --from-site FROM_SITE --to-site YOUR_SITE filelist.txt /store/user/leo
 
   * Copying data locally: in this case you don't have to give the --to-site option but you need to give
   a dest_dir in PFN format. Warning: if you intend to use the --recreate-subdirs option, you need to create yourself the local directory structure:
-
-      data_replica filelist.txt --from-site FROM_SITE  file:///`pwd`/
+      data_replica --from-site FROM_SITE filelist.txt  file:///`pwd`/
 
   * Copying data from a local area: the list of files should contain only full paths:
-
       data_replica.py --from-site LOCAL --to-site T3_CH_PSI filelist.txt /store/user/leo/test1
 
-  * Copying files registered to DBS from CASTOR@CERN:
-
+  * Copying files from CAF:
       data_replica.py --from-site T2_CH_CAF --to-site T3_CH_PSI filelist.txt /store/user/leo/testCastor4 
 
   * Copying files from user area under CASTOR@CERN (files not registered to DBS). In this case, PFN are not retrievable from PhEDEx data service,
   so the file list must contain Castor full path (/castor/cern.ch/....) and the source site is CERN_CASTOR_USER:
-  
       data_replica.py --from-site CERN_CASTOR_USER --to-site T3_CH_PSI filelist.txt /store/user/leo/testCastor3 
 
   * When copying from a Castor area from lxplus and you want to pre-stage files to a local /tmp directory through rfcp
   (useful when copying files not accessed since long, avoiding srm timeouts), use --castor-stage.
 
-  * Copying data from EOS@CERN, you have to specify --from-site CERN_EOS. Filenames in filelist.txt are still LFN (/store/...):
-
+  * Copying data from EOS@CERN, you have to specify --from-site CERN_EOS (this is automatically done for T2_CH_CAF, at the time of writing). Filenames in filelist.txt are still LFN (/store/...):
       data_replica.py --from-site CERN_EOS --to-site T3_CH_PSI filelist.txt /store/user/leo/testEos
   
   Use the -h option for more information
