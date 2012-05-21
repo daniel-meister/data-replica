@@ -4,7 +4,7 @@
 #
 # Author: Leonardo Sala <leonardo.sala@cern.ch>
 #
-# $Id: data_replica.py,v 1.41 2012/01/10 21:05:31 leo Exp $
+# $Id: data_replica.py,v 1.42 2012/01/11 12:24:31 leo Exp $
 #################################################################
 
 
@@ -29,6 +29,9 @@ LCG_OPTIONS_17 = LCG_OPTIONS_COMMON
 LCG_OPTIONS_17 += "--srm-timeout=6000 "
 LCG_OPTIONS_17+= "-n 1 "
 LCG_OPTIONS_17+= "--connect-timeout=6000 "
+LCG_OPTIONS_17+= "--bdii-timeout=6000 "
+LCG_OPTIONS_17+= "--sendreceive-timeout=6000 "
+
 ###for lcg-utils>= 1.11
 #LCG_OPTIONS_1_11
 ###for lcg-utisl <1.7
@@ -196,17 +199,19 @@ def retrieve_siteList(lfn,entry):
     for x in out:
         old_x = x
         init = x[init:].find(" node='")
+        
         while init!=-1:
             init += len(" node='")
             site = x[init:][:x[init:].find("'")]
+            x = x[init:]
+            init = x.find(" node='")
+                            
             ##this exclude the destination site from the list
             if options.TO_SITE!="" and site.find(options.TO_SITE)!=-1: continue
             
             if site.find("MSS")==-1:
                 entry.append({"node":site} )
                
-            x = x[init:]
-            init = x.find(" node='")
 
         search_string = " bytes='"
         x = old_x[old_x.find("<file "):]
@@ -279,8 +284,7 @@ def arrange_sources(sitelist,PREFERRED_SITES, DENIED_SITES ):
             if dSite in entry["node"]:
                 allowed = False
                 break
-        if not allowed:
-            continue
+        if not allowed:   continue
 
         preferred=False
         for pSite in PREFERRED_SITES:
@@ -804,7 +808,7 @@ def data_replica(args, moptions):
                     SUCCESS, error_log = copyFile(options.TOOL,copyOptions, entry, pfn_DESTINATION, srm_prot, myLog,DATAREPLICA_LOGFILE, False)
                     pipe = os.popen("rm "+local_pfn)
                     printDebug("CastorStaging: deleted "+local_pfn)
-
+                    
             elif options.usePDS:
                 sources_list = arrange_sources(filelist,PREFERRED_SITES,  DENIED_SITES )
                 if sources_list == []:
