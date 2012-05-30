@@ -80,8 +80,9 @@ if options.TO_SITE=="":
     print "Please give a destination"
     exit(1)   
 
-DBS_SERVER = {"ph01":"https://cmsdbsprod.cern.ch:8443/cms_dbs_ph_analysis_01_writer/servlet/DBSServlet",
-              "ph02":"https://cmsdbsprod.cern.ch:8443/cms_dbs_ph_analysis_02_writer/servlet/DBSServlet"}
+DBS_SERVER = {"ph01":("cms_dbs_ph_analysis_01","https://cmsdbsprod.cern.ch:8443/cms_dbs_ph_analysis_01_writer/servlet/DBSServlet"),
+              "ph02":("cms_dbs_ph_analysis_02","https://cmsdbsprod.cern.ch:8443/cms_dbs_ph_analysis_02_writer/servlet/DBSServlet")}
+
 DATASET = args[0]
 TO_SITE = options.TO_SITE
 
@@ -94,8 +95,8 @@ SiteToSe, SeToSite = getSeName()
 #optManager  = DbsOptionParser()
 #(opts,args) = optManager.getOpt()
 opts = dbsOpts()
-opts.instance = 'cms_dbs_ph_analysis_02'
-opts.url = 'https://cmsdbsprod.cern.ch:8443/cms_dbs_ph_analysis_02_writer/servlet/DBSServlet'
+opts.instance = DBS_SERVER[options.DBS][0]
+opts.url      = DBS_SERVER[options.DBS][1]
 api = DbsApi(opts.__dict__)
 
 
