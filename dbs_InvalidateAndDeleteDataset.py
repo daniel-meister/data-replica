@@ -228,7 +228,7 @@ for site in SITES:
     print "Deletion in progress..."
     for f in fileList:
         newF = f.replace(lfnRoot,pfnRoot)
-        command = "srmrm "+newF
+        command = "lcg-del -b -D srmv2 -l "+newF
         if options.DEBUG: print command
         out = popen(command).readlines()
         if out!=[]:
